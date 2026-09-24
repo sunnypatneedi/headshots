@@ -1,0 +1,14 @@
+__pycache__/
+*.egg-info/
+.venv/
+build/
+dist/
+.pytest_cache/
+.ruff_cache/
+.DS_Store
+
+# Output the tool writes next to photos, in case anyone runs it inside a checkout
+polished/
+_report.json
+_students.*
+_contact-sheet*.jpg

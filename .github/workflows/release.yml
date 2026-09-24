@@ -1,0 +1,82 @@
+name: release
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  macos:
+    runs-on: macos-latest
+    # Job-level env, because a step's `if` is evaluated before that step's own env exists.
+    env:
+      CERT_P12: ${{ secrets.MACOS_CERT_P12 }}
+      CERT_PASSWORD: ${{ secrets.MACOS_CERT_PASSWORD }}
+      SIGN_ID: ${{ secrets.MACOS_SIGN_ID }}
+      NOTARY_KEY: ${{ secrets.NOTARY_KEY }}
+      NOTARY_KEY_ID: ${{ secrets.NOTARY_KEY_ID }}
+      NOTARY_ISSUER: ${{ secrets.NOTARY_ISSUER }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      # Signing is optional. Without these secrets the build still runs and produces an ad-hoc
+      # signed app; people then have to clear the quarantine flag by hand once. Add the secrets
+      # and the same build comes out notarised, which removes that step.
+      - name: Import the signing certificate
+        if: env.CERT_P12 != ''
+        run: |
+          echo "$CERT_P12" | base64 --decode > /tmp/cert.p12
+          security create-keychain -p actions build.keychain
+          security default-keychain -s build.keychain
+          security unlock-keychain -p actions build.keychain
+          security import /tmp/cert.p12 -k build.keychain -P "$CERT_PASSWORD" -T /usr/bin/codesign
+          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k actions build.keychain
+          rm /tmp/cert.p12
+
+      - name: Build
+        run: ./scripts/build-app.sh
+
+      - name: Notarise
+        if: env.NOTARY_KEY != ''
+        run: |
+          echo "$NOTARY_KEY" > /tmp/key.p8
+          ditto -c -k --keepParent dist/Headshots.app /tmp/Headshots.zip
+          xcrun notarytool submit /tmp/Headshots.zip --wait \
+            --key /tmp/key.p8 --key-id "$NOTARY_KEY_ID" --issuer "$NOTARY_ISSUER"
+          xcrun stapler staple dist/Headshots.app
+          rm /tmp/key.p8
+
+      - name: Package
+        run: ./scripts/make-dmg.sh
+
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: dist/*.dmg
+          generate_release_notes: true
+          body: |
+            If macOS says the app is damaged or from an unidentified developer, this build was not
+            notarised. Clear the quarantine flag once:
+
+                xattr -rd com.apple.quarantine /Applications/Headshots.app
+
+            Or skip the app entirely: `pipx install headshots` gives you the same tool on the
+            command line, with no Gatekeeper step.
+
+  pypi:
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/v')
+    permissions:
+      id-token: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install build && python -m build
+      - uses: pypa/gh-action-pypi-publish@release/v1

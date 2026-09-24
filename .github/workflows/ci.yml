@@ -1,0 +1,41 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  python:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+        python: ["3.10", "3.13"]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+      - run: pip install -e ".[dev]"
+      - run: ruff check src tests
+      # The tests use made-up faces and made-up fingerprints, so they need no photos, no models
+      # and no network. If that ever stops being true, this job is where you will find out.
+      - run: pytest
+
+  app:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Build the window
+        run: swiftc -O -parse-as-library -target arm64-apple-macos13.0 -o /tmp/Headshots app/Sources/Headshots/*.swift
+      - name: Build the whole app
+        run: ./scripts/build-app.sh
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Headshots-app-unsigned
+          path: dist/Headshots.app

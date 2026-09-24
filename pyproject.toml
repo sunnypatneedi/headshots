@@ -1,0 +1,63 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "headshots"
+dynamic = ["version"]
+description = "Frame, finish and check a folder of portraits, then group them by who is in them. Runs entirely on your machine."
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "Apache-2.0" }
+authors = [{ name = "Sunny Patneedi" }]
+keywords = ["headshot", "portrait", "photography", "face-detection", "batch", "offline"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Environment :: Console",
+    "Intended Audience :: End Users/Desktop",
+    "License :: OSI Approved :: Apache Software License",
+    "Operating System :: MacOS :: MacOS X",
+    "Operating System :: POSIX :: Linux",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Multimedia :: Graphics :: Graphics Conversion",
+]
+dependencies = [
+    "numpy>=1.24",
+    "opencv-python-headless>=4.8",
+    "pillow>=10.1",
+    "pillow-heif>=0.13",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=7", "ruff>=0.6"]
+
+[project.scripts]
+headshots = "headshots.cli:main"
+
+[project.urls]
+Homepage = "https://github.com/sunnypatneedi/headshots"
+Source = "https://github.com/sunnypatneedi/headshots"
+Issues = "https://github.com/sunnypatneedi/headshots/issues"
+
+[tool.hatch.version]
+path = "src/headshots/__init__.py"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/headshots"]
+
+[tool.ruff]
+line-length = 120
+target-version = "py310"
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "UP", "B"]
+# E501: the long lines are all sentences the tool prints. Keeping each on one line
+# means you can grep for any message a user quotes at you and land on it.
+ignore = ["E741", "E501"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"

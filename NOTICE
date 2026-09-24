@@ -1,0 +1,26 @@
+headshots
+Copyright 2026 Sunny Patneedi
+
+Licensed under the Apache License, Version 2.0 (the "License"); you may not use
+this file except in compliance with the License. You may obtain a copy of the
+License in the LICENSE file, or at http://www.apache.org/licenses/LICENSE-2.0
+
+--------------------------------------------------------------------------------
+Face models
+
+This software uses two models from the OpenCV Model Zoo
+(https://github.com/opencv/opencv_zoo). Neither is distributed here. Both are
+downloaded on first use and verified against a SHA-256 pinned in
+src/headshots/models.py; a download that does not match is discarded.
+
+  YuNet face detection - face_detection_yunet_2023mar.onnx
+  MIT License. Copyright (c) 2020 Shiqi Yu <shiqi.yu@gmail.com>
+  https://github.com/opencv/opencv_zoo/tree/main/models/face_detection_yunet
+
+  SFace face recognition - face_recognition_sface_2021dec.onnx
+  Apache License, Version 2.0.
+  https://github.com/opencv/opencv_zoo/tree/main/models/face_recognition_sface
+
+Both licences permit commercial use and redistribution. The training data behind
+the SFace weights is not fully documented upstream; if that matters for your use,
+follow opencv/opencv_zoo#313 before relying on it.
