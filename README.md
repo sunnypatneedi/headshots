@@ -57,6 +57,16 @@ $ pipx install headshots     # or: uv tool install headshots
 
 Python 3.10 or newer. The app carries its own Python, so you do not need both.
 
+## Systems design
+
+Interactive architecture map (Archify) for both audiences — open the HTML and use the view chips:
+
+- **Plain story** — drop a folder, frame/check the set, group people
+- **Technical stack** — SwiftUI shell → Python CLI → polish / group → YuNet + SFace
+- **Stays on device** — local disk only; network is a one-time SHA-256-pinned model fetch
+
+[Open the diagram](./docs/architecture/headshots.html) · source: [`headshots.architecture.json`](./docs/architecture/headshots.architecture.json)
+
 ## Demo shoot (synthetic)
 
 Fictional phone portraits live in [`examples/synthetic/`](./examples/synthetic/) — not anyone’s private photos.

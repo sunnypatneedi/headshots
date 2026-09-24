@@ -1,0 +1,474 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {
+    "title": "headshots \u2014 local portrait set system",
+    "quality_profile": "showcase",
+    "locale": "en",
+    "repository": {
+      "url": "https://github.com/sunnypatneedi/headshots",
+      "revision": "8c595b1e4e25568b6372573fa48c8963f88e06fb"
+    },
+    "views": [
+      {
+        "id": "plain-story",
+        "label": "Plain story",
+        "focus": [
+          "you",
+          "shoot",
+          "surfaces",
+          "polish",
+          "group",
+          "results"
+        ],
+        "note": "Drop a folder in. The tool frames every face the same way, checks the set, then groups people \u2014 all on your Mac."
+      },
+      {
+        "id": "technical-stack",
+        "label": "Technical stack",
+        "focus": [
+          "surfaces",
+          "cli",
+          "events",
+          "polish",
+          "group",
+          "models",
+          "yunet",
+          "sface"
+        ],
+        "note": "SwiftUI shells the same Python CLI over JSON lines. polish uses YuNet; group adds SFace clustering."
+      },
+      {
+        "id": "privacy",
+        "label": "Stays on device",
+        "focus": [
+          "you",
+          "shoot",
+          "surfaces",
+          "polish",
+          "group",
+          "results",
+          "models",
+          "zoo"
+        ],
+        "note": "Photos never leave the machine. The only network call is a one-time SHA-256-pinned model download."
+      }
+    ],
+    "viewBox": [
+      1360,
+      640
+    ]
+  },
+  "components": [
+    {
+      "id": "you",
+      "type": "external",
+      "label": "You",
+      "sublabel": "photographer",
+      "pos": [
+        24,
+        260
+      ],
+      "size": [
+        110,
+        52
+      ]
+    },
+    {
+      "id": "shoot",
+      "type": "database",
+      "label": "Shoot folder",
+      "sublabel": "JPEGs / HEIC",
+      "pos": [
+        170,
+        260
+      ],
+      "size": [
+        130,
+        52
+      ],
+      "tag": "local disk"
+    },
+    {
+      "id": "surfaces",
+      "type": "frontend",
+      "label": "Surfaces",
+      "sublabel": "App \u00b7 CLI",
+      "pos": [
+        340,
+        260
+      ],
+      "size": [
+        130,
+        52
+      ],
+      "tag": "SwiftUI + pipx",
+      "sources": [
+        {
+          "path": "app/Sources/Headshots/Runner.swift",
+          "line": 1,
+          "label": "SwiftUI runner"
+        }
+      ]
+    },
+    {
+      "id": "cli",
+      "type": "backend",
+      "label": "headshots CLI",
+      "sublabel": "polish \u00b7 group \u00b7 run",
+      "pos": [
+        510,
+        260
+      ],
+      "size": [
+        140,
+        52
+      ],
+      "sources": [
+        {
+          "path": "src/headshots/cli.py",
+          "line": 84,
+          "label": "CLI main"
+        }
+      ]
+    },
+    {
+      "id": "events",
+      "type": "messagebus",
+      "label": "events",
+      "sublabel": "JSONL or prose",
+      "pos": [
+        510,
+        120
+      ],
+      "size": [
+        140,
+        52
+      ],
+      "sources": [
+        {
+          "path": "src/headshots/events.py",
+          "line": 1,
+          "label": "JSONL events"
+        }
+      ]
+    },
+    {
+      "id": "polish",
+      "type": "backend",
+      "label": "polish",
+      "sublabel": "frame \u00b7 finish \u00b7 judge",
+      "pos": [
+        700,
+        160
+      ],
+      "size": [
+        140,
+        52
+      ],
+      "sources": [
+        {
+          "path": "src/headshots/polish.py",
+          "line": 704,
+          "label": "polish.run"
+        }
+      ]
+    },
+    {
+      "id": "group",
+      "type": "backend",
+      "label": "group",
+      "sublabel": "SFace cluster",
+      "pos": [
+        880,
+        320
+      ],
+      "size": [
+        140,
+        52
+      ],
+      "sources": [
+        {
+          "path": "src/headshots/group.py",
+          "line": 200,
+          "label": "group.analyze"
+        }
+      ]
+    },
+    {
+      "id": "yunet",
+      "type": "backend",
+      "label": "YuNet",
+      "sublabel": "detect ONNX",
+      "pos": [
+        880,
+        100
+      ],
+      "size": [
+        120,
+        52
+      ],
+      "sources": [
+        {
+          "path": "src/headshots/polish.py",
+          "line": 209,
+          "label": "ensure_model / detect"
+        }
+      ]
+    },
+    {
+      "id": "sface",
+      "type": "backend",
+      "label": "SFace",
+      "sublabel": "embed ONNX",
+      "pos": [
+        1040,
+        360
+      ],
+      "size": [
+        120,
+        52
+      ],
+      "sources": [
+        {
+          "path": "src/headshots/group.py",
+          "line": 71,
+          "label": "fingerprints"
+        }
+      ]
+    },
+    {
+      "id": "models",
+      "type": "database",
+      "label": "Model cache",
+      "sublabel": "~/.cache",
+      "pos": [
+        1040,
+        240
+      ],
+      "size": [
+        120,
+        52
+      ],
+      "sources": [
+        {
+          "path": "src/headshots/models.py",
+          "line": 39,
+          "label": "models.ensure"
+        }
+      ]
+    },
+    {
+      "id": "results",
+      "type": "database",
+      "label": "polished/",
+      "sublabel": "set + sheets",
+      "pos": [
+        700,
+        460
+      ],
+      "size": [
+        140,
+        52
+      ],
+      "tag": "PASS \u00b7 REVIEW \u00b7 FAIL"
+    },
+    {
+      "id": "zoo",
+      "type": "external",
+      "label": "OpenCV Zoo",
+      "sublabel": "first download",
+      "pos": [
+        1200,
+        240
+      ],
+      "size": [
+        120,
+        52
+      ],
+      "tag": "SHA-256 pin"
+    }
+  ],
+  "boundaries": [
+    {
+      "kind": "region",
+      "label": "Your Mac \u2014 no uploads, no account, no telemetry",
+      "wraps": [
+        "shoot",
+        "surfaces",
+        "cli",
+        "events",
+        "polish",
+        "group",
+        "yunet",
+        "sface",
+        "models",
+        "results"
+      ]
+    }
+  ],
+  "connections": [
+    {
+      "id": "you-drop",
+      "from": "you",
+      "to": "shoot",
+      "label": "drop folder",
+      "variant": "emphasis",
+      "labelDy": -22
+    },
+    {
+      "id": "shoot-to-surfaces",
+      "from": "shoot",
+      "to": "surfaces",
+      "label": "open",
+      "labelDy": -22
+    },
+    {
+      "id": "surfaces-to-cli",
+      "from": "surfaces",
+      "to": "cli",
+      "label": "spawn --json",
+      "labelDy": -22
+    },
+    {
+      "id": "cli-events",
+      "from": "cli",
+      "to": "events",
+      "label": "progress",
+      "fromSide": "top",
+      "toSide": "bottom",
+      "labelDx": 48
+    },
+    {
+      "id": "events-app",
+      "from": "events",
+      "to": "surfaces",
+      "label": "stream UI",
+      "variant": "dashed",
+      "fromSide": "left",
+      "toSide": "top",
+      "labelDy": -28
+    },
+    {
+      "id": "cli-polish",
+      "from": "cli",
+      "to": "polish",
+      "label": "run",
+      "variant": "emphasis",
+      "labelDy": -22
+    },
+    {
+      "id": "polish-group",
+      "from": "polish",
+      "to": "group",
+      "label": "then group",
+      "fromSide": "right",
+      "toSide": "left",
+      "labelDy": -24
+    },
+    {
+      "id": "polish-yunet",
+      "from": "polish",
+      "to": "yunet",
+      "label": "detect",
+      "fromSide": "right",
+      "toSide": "left",
+      "labelDy": -22
+    },
+    {
+      "id": "group-sface",
+      "from": "group",
+      "to": "sface",
+      "label": "match",
+      "fromSide": "right",
+      "toSide": "left",
+      "labelAt": [
+        1030,
+        310
+      ]
+    },
+    {
+      "id": "yunet-cache",
+      "from": "yunet",
+      "to": "models",
+      "label": "load",
+      "fromSide": "right",
+      "toSide": "top",
+      "labelDy": -28
+    },
+    {
+      "id": "sface-cache",
+      "from": "sface",
+      "to": "models",
+      "label": "load",
+      "fromSide": "top",
+      "toSide": "bottom",
+      "labelDx": 40
+    },
+    {
+      "id": "cache-zoo",
+      "from": "models",
+      "to": "zoo",
+      "label": "first run only",
+      "variant": "dashed",
+      "labelDy": -22
+    },
+    {
+      "id": "polish-results",
+      "from": "polish",
+      "to": "results",
+      "label": "write JPEGs",
+      "fromSide": "bottom",
+      "toSide": "top",
+      "labelAt": [
+        820,
+        320
+      ]
+    },
+    {
+      "id": "group-results",
+      "from": "group",
+      "to": "results",
+      "label": "person sheets",
+      "variant": "dashed",
+      "fromSide": "bottom",
+      "toSide": "right",
+      "labelDy": 36,
+      "labelAt": [
+        920,
+        440
+      ]
+    }
+  ],
+  "cards": [
+    {
+      "dot": "cyan",
+      "title": "For everyone",
+      "items": [
+        "Point it at a folder of portraits from one shoot",
+        "It matches head size and eye line, then grades PASS / REVIEW / FAIL",
+        "Optionally groups who is who and builds contact sheets",
+        "Everything stays on your computer"
+      ]
+    },
+    {
+      "dot": "emerald",
+      "title": "For engineers",
+      "items": [
+        "One Python package (cli \u2192 polish \u2192 group) plus a thin SwiftUI shell",
+        "App and terminal share the same --json event stream",
+        "YuNet detection + SFace embeddings from OpenCV Zoo, SHA-256 pinned",
+        "opencv-python-headless \u00b7 Pillow \u00b7 numpy; models cached under ~/.cache/headshots"
+      ]
+    },
+    {
+      "dot": "rose",
+      "title": "Trust boundary",
+      "items": [
+        "No account, upload, or telemetry",
+        "Network only for first-time model fetch; checksum failure aborts",
+        "Your originals are never overwritten \u2014 output lands in polished/"
+      ]
+    }
+  ]
+}
