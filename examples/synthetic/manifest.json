@@ -1,0 +1,98 @@
+[
+  {
+    "file": "person-a-01.jpg",
+    "fictional_id": "person-a",
+    "source": "AI-generated fictional adult studio portrait (not a real person)",
+    "raw": "_raw/person-a.png",
+    "raw_sha256_12": "bf39ebecaa3a",
+    "yunet_faces": 1,
+    "size": [
+      1200,
+      1500
+    ]
+  },
+  {
+    "file": "person-a-02.jpg",
+    "fictional_id": "person-a",
+    "source": "AI-generated fictional adult studio portrait (not a real person)",
+    "raw": "_raw/person-a.png",
+    "raw_sha256_12": "bf39ebecaa3a",
+    "yunet_faces": 2,
+    "size": [
+      1200,
+      1500
+    ]
+  },
+  {
+    "file": "person-b-01.jpg",
+    "fictional_id": "person-b",
+    "source": "AI-generated fictional adult studio portrait (not a real person)",
+    "raw": "_raw/person-b.png",
+    "raw_sha256_12": "1b28688f3330",
+    "yunet_faces": 1,
+    "size": [
+      1200,
+      1500
+    ]
+  },
+  {
+    "file": "person-b-02.jpg",
+    "fictional_id": "person-b",
+    "source": "AI-generated fictional adult studio portrait (not a real person)",
+    "raw": "_raw/person-b.png",
+    "raw_sha256_12": "1b28688f3330",
+    "yunet_faces": 1,
+    "size": [
+      1200,
+      1500
+    ]
+  },
+  {
+    "file": "person-c-01.jpg",
+    "fictional_id": "person-c",
+    "source": "AI-generated fictional adult studio portrait (not a real person)",
+    "raw": "_raw/person-c.png",
+    "raw_sha256_12": "f442ada33eb3",
+    "yunet_faces": 1,
+    "size": [
+      1200,
+      1500
+    ]
+  },
+  {
+    "file": "person-c-02.jpg",
+    "fictional_id": "person-c",
+    "source": "AI-generated fictional adult studio portrait (not a real person)",
+    "raw": "_raw/person-c.png",
+    "raw_sha256_12": "f442ada33eb3",
+    "yunet_faces": 1,
+    "size": [
+      1200,
+      1500
+    ]
+  },
+  {
+    "file": "person-d-01.jpg",
+    "fictional_id": "person-d",
+    "source": "AI-generated fictional adult studio portrait (not a real person)",
+    "raw": "_raw/person-d.png",
+    "raw_sha256_12": "85f50395e3d4",
+    "yunet_faces": 2,
+    "size": [
+      1200,
+      1500
+    ]
+  },
+  {
+    "file": "person-d-02.jpg",
+    "fictional_id": "person-d",
+    "source": "AI-generated fictional adult studio portrait (not a real person)",
+    "raw": "_raw/person-d.png",
+    "raw_sha256_12": "85f50395e3d4",
+    "yunet_faces": 2,
+    "size": [
+      1200,
+      1500
+    ]
+  }
+]

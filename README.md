@@ -57,6 +57,18 @@ $ pipx install headshots     # or: uv tool install headshots
 
 Python 3.10 or newer. The app carries its own Python, so you do not need both.
 
+## Demo shoot (synthetic)
+
+Fictional phone portraits live in [`examples/synthetic/`](./examples/synthetic/) — not anyone’s private photos.
+
+```console
+$ cp -R examples/synthetic/shoot /tmp/headshots-demo
+$ headshots run /tmp/headshots-demo
+$ open /tmp/headshots-demo/polished/_contact-sheet.jpg   # macOS
+```
+
+See [`examples/synthetic/README.md`](./examples/synthetic/README.md).
+
 ## Use
 
 ```console

@@ -12,3 +12,6 @@ polished/
 _report.json
 _students.*
 _contact-sheet*.jpg
+
+# Optional masters for regenerating demo JPEGs (shoot/ is what ships)
+examples/synthetic/_raw/
