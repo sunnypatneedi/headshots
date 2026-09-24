@@ -1,7 +1,8 @@
 """The two face models, fetched once and cached.
 
 Both are pinned by SHA-256: a download that does not match the pin is discarded rather than used.
-This is the only part of the tool that touches the network, and only the first time it runs.
+On the free path this is the only network the tool uses, and only the first time it runs.
+`--decide jev` is separate, and only runs when you ask: it sends measurements, not these files.
 
     face detection    YuNet   (MIT, OpenCV Model Zoo)      230 KB
     face recognition  SFace   (Apache-2.0, OpenCV Model Zoo) 37 MB, only needed for `group`
