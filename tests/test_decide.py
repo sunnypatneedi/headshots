@@ -188,6 +188,8 @@ def test_premium_jev_uses_the_look_it_was_given(monkeypatch, capsys):
     assert seen["url"] == "https://api.typesafe.ai/v1/systemone"
     assert seen["auth"] == "Bearer test-key"
     assert seen["body"]["model"] == "jev-latest"
+    assert "question" in seen["body"]
+    assert "person should look" in seen["body"]["question"]
     assert set(seen["body"]["state"]) == {"grade", "reasons", "metrics"}
     assert seen["body"]["state"]["grade"] == "PASS"
     assert seen["body"]["state"]["metrics"]["eye_sharpness"] == 1.1

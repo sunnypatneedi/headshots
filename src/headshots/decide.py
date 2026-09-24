@@ -199,7 +199,13 @@ def _ask_jev(grade: str, reasons: list, metrics: dict) -> float:
     if not key:
         raise Unavailable("needs TYPESAFE_API_KEY")
     state = {"grade": grade, "reasons": list(reasons), "metrics": _compact(metrics)}
-    body = json.dumps({"model": JEV_MODEL, "state": state}, separators=(",", ":")).encode()
+    question = (
+        "How likely is it that a person should look at this photo (0 to 1)? "
+        "A sure PASS should be near 0. A PASS that is too close to call, or any REVIEW, "
+        "should be at least 0.4. A hard FAIL should be near 1. Answer with that probability only."
+    )
+    body = json.dumps({"model": JEV_MODEL, "state": state, "question": question},
+                      separators=(",", ":")).encode()
     req = urllib.request.Request(
         JEV_URL,
         data=body,
