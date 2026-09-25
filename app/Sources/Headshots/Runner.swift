@@ -18,6 +18,7 @@ final class Runner: ObservableObject {
     @Published var failure: String?
 
     private var process: Process?
+    private var userCancelled = false
 
     static var toolURL: URL? {
         let bundled = Bundle.main.resourceURL?.appendingPathComponent("bin/headshots")
@@ -31,9 +32,11 @@ final class Runner: ObservableObject {
     }
 
     func cancel() {
+        userCancelled = true
         process?.terminate()
         process = nil
         running = false
+        failure = "Polishing was cancelled."
     }
 
     func run(folder: URL, options: Options) {
@@ -43,7 +46,7 @@ final class Runner: ObservableObject {
             return
         }
         photos = []; lines = []; polished = nil; grouped = nil; failure = nil
-        done = 0; total = 0; running = true
+        done = 0; total = 0; running = true; userCancelled = false
 
         let task = Process()
         task.executableURL = tool
@@ -74,6 +77,11 @@ final class Runner: ObservableObject {
             Task { @MainActor in
                 self.running = false
                 self.process = nil
+                if self.userCancelled {
+                    // cancel() already set a clear message; do not overwrite with SIGTERM noise.
+                    self.userCancelled = false
+                    return
+                }
                 // Exit code 1 just means at least one photo graded FAIL, which is a result, not an error.
                 if finished.terminationStatus > 1 {
                     self.failure = stderr.isEmpty ? "The command stopped unexpectedly." : stderr
