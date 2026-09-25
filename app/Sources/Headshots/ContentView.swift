@@ -1,36 +1,50 @@
-// The window: drop a folder, choose how it should look, watch it happen, open the result.
-// Visual craft: calm tool empty state (Harbor/Familiar), compact system chrome (Ice),
-// five high-leverage surfaces — home, settings, primary action, progress, error.
+// Three-step product flow: Select folder → Polish → Gallery of polished outputs.
+// Craft: Harbor/Familiar calm hierarchy, Ice compact chrome, IINA image-first lightbox.
 
 import AppKit
 import SwiftUI
 import UniformTypeIdentifiers
+
+private enum FlowPhase: Int, CaseIterable {
+    case select, polish, gallery
+
+    var title: String {
+        switch self {
+        case .select: return "Select"
+        case .polish: return "Polish"
+        case .gallery: return "Gallery"
+        }
+    }
+}
 
 struct ContentView: View {
     @StateObject private var runner = Runner()
     @State private var folder: URL?
     @State private var options = Options()
     @State private var targeted = false
+    @State private var galleryFilter: GalleryFilter = .all
+    @State private var gallerySelection: Event.Photo.ID?
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
-    private var showsSettings: Bool { !runner.running && runner.polished == nil }
-    private var showsProgress: Bool { runner.running || runner.polished != nil }
+    private var phase: FlowPhase {
+        if runner.running { return .polish }
+        if runner.polished != nil || !runner.photos.isEmpty { return .gallery }
+        return .select
+    }
 
     var body: some View {
         VStack(spacing: 0) {
             ScrollView {
-                VStack(alignment: .leading, spacing: 20) {
-                    DropZone(folder: $folder, targeted: $targeted, disabled: runner.running)
-                        .accessibilityLabel(dropAccessibilityLabel)
+                VStack(alignment: .leading, spacing: 18) {
+                    FlowStepper(phase: phase)
 
-                    if showsSettings {
-                        SettingsPanel(options: $options)
-                            .transition(panelTransition)
-                    }
-
-                    if showsProgress {
-                        ProgressPanel(runner: runner)
-                            .transition(panelTransition)
+                    switch phase {
+                    case .select:
+                        selectStep
+                    case .polish:
+                        polishStep
+                    case .gallery:
+                        galleryStep
                     }
 
                     if let failure = runner.failure {
@@ -39,19 +53,64 @@ struct ContentView: View {
                     }
                 }
                 .padding(20)
-                .animation(reduceMotion ? nil : .easeInOut(duration: 0.22), value: showsSettings)
-                .animation(reduceMotion ? nil : .easeInOut(duration: 0.22), value: showsProgress)
+                .animation(reduceMotion ? nil : .easeInOut(duration: 0.22), value: phase)
                 .animation(reduceMotion ? nil : .easeInOut(duration: 0.22), value: runner.failure)
             }
 
             Divider()
-            ActionBar(folder: folder, options: options, runner: runner)
-                .padding(.horizontal, 20)
-                .padding(.vertical, 14)
-                .background(.bar)
+            ActionBar(
+                folder: $folder,
+                options: options,
+                runner: runner,
+                phase: phase,
+                onChooseDifferentFolder: chooseDifferentFolder
+            )
+            .padding(.horizontal, 20)
+            .padding(.vertical, 14)
+            .background(.bar)
         }
         .background(WindowBackdrop())
-        .frame(minWidth: 640, minHeight: 580)
+        .frame(minWidth: 680, minHeight: 600)
+    }
+
+    // MARK: Steps
+
+    private var selectStep: some View {
+        VStack(alignment: .leading, spacing: 18) {
+            DropZone(folder: $folder, targeted: $targeted, disabled: false)
+                .accessibilityLabel(dropAccessibilityLabel)
+            SettingsPanel(options: $options)
+        }
+    }
+
+    private var polishStep: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            FolderChip(folder: folder)
+            ProgressStrip(runner: runner)
+            GalleryPanel(
+                photos: runner.photos,
+                outDir: runner.outDir,
+                running: true,
+                filter: $galleryFilter,
+                selection: $gallerySelection
+            )
+        }
+    }
+
+    private var galleryStep: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            FolderChip(folder: folder)
+            if let polished = runner.polished {
+                ResultSummary(polished: polished, grouped: runner.grouped)
+            }
+            GalleryPanel(
+                photos: runner.photos,
+                outDir: runner.outDir ?? runner.polished?.out,
+                running: false,
+                filter: $galleryFilter,
+                selection: $gallerySelection
+            )
+        }
     }
 
     private var dropAccessibilityLabel: String {
@@ -64,15 +123,91 @@ struct ContentView: View {
     private var panelTransition: AnyTransition {
         reduceMotion ? .opacity : .opacity.combined(with: .move(edge: .top))
     }
+
+    private func chooseDifferentFolder() {
+        gallerySelection = nil
+        galleryFilter = .all
+        runner.resetResults()
+        folder = nil
+        let panel = NSOpenPanel()
+        panel.canChooseDirectories = true
+        panel.canChooseFiles = false
+        panel.prompt = "Choose"
+        if panel.runModal() == .OK {
+            folder = panel.url
+        }
+    }
 }
 
-// MARK: - Backdrop (subtle drafting-grid energy without marketing chrome)
+// MARK: - Flow chrome
+
+private struct FlowStepper: View {
+    let phase: FlowPhase
+
+    var body: some View {
+        HStack(spacing: 0) {
+            ForEach(FlowPhase.allCases, id: \.self) { step in
+                HStack(spacing: 6) {
+                    Circle()
+                        .fill(step.rawValue <= phase.rawValue ? Color.accentColor : Color.secondary.opacity(0.25))
+                        .frame(width: 7, height: 7)
+                    Text(step.title)
+                        .font(.subheadline.weight(step == phase ? .semibold : .regular))
+                        .foregroundStyle(step == phase ? .primary : .secondary)
+                }
+                .accessibilityLabel("\(step.title)\(step == phase ? ", current step" : "")")
+                if step != .gallery {
+                    Rectangle()
+                        .fill(Color.secondary.opacity(0.25))
+                        .frame(height: 1)
+                        .frame(maxWidth: 28)
+                        .padding(.horizontal, 8)
+                        .accessibilityHidden(true)
+                }
+            }
+            Spacer(minLength: 0)
+        }
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel("Workflow: Select, Polish, Gallery. Current step \(phase.title)")
+    }
+}
+
+private struct FolderChip: View {
+    let folder: URL?
+
+    var body: some View {
+        HStack(spacing: 8) {
+            Image(systemName: "folder.fill")
+                .foregroundStyle(.secondary)
+            if let folder {
+                Text(folder.lastPathComponent)
+                    .font(.subheadline.weight(.medium))
+                    .lineLimit(1)
+                Text(folder.deletingLastPathComponent().path)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+            } else {
+                Text("No folder selected")
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+            }
+            Spacer(minLength: 0)
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 8)
+        .background(
+            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                .fill(.ultraThinMaterial)
+        )
+    }
+}
 
 private struct WindowBackdrop: View {
     var body: some View {
         ZStack {
             Color(nsColor: .windowBackgroundColor)
-            // Soft vertical wash — designed dark mode, not a flat invert.
             LinearGradient(
                 colors: [
                     Color.primary.opacity(0.03),
@@ -136,7 +271,7 @@ private struct DropZone: View {
                         Text("Drop a folder of photos")
                             .font(.title3.weight(.semibold))
                             .foregroundStyle(.primary)
-                        Text("Matched headshots from the same shoot — originals stay untouched.")
+                        Text("Select → Polish → Gallery. Originals stay untouched.")
                             .font(.callout)
                             .foregroundStyle(.secondary)
                             .multilineTextAlignment(.center)
@@ -290,50 +425,36 @@ private struct SettingsPanel: View {
     }
 }
 
-// MARK: - Progress / results
+// MARK: - Progress (secondary to gallery)
 
-private struct ProgressPanel: View {
+private struct ProgressStrip: View {
     @ObservedObject var runner: Runner
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 14) {
-            if runner.running {
-                VStack(alignment: .leading, spacing: 8) {
-                    HStack {
-                        Text(runner.total > 0
-                             ? "\(runner.done) of \(runner.total)"
-                             : "Reading the folder…")
-                            .font(.subheadline.weight(.medium))
-                        Spacer()
-                        if runner.total > 0 {
-                            Text("\(percent)%")
-                                .font(.caption.monospacedDigit())
-                                .foregroundStyle(.secondary)
-                        }
-                    }
-                    ProgressView(value: Double(runner.done), total: Double(max(runner.total, 1)))
-                        .accessibilityLabel("Polishing progress")
-                        .accessibilityValue(runner.total > 0
-                            ? "\(runner.done) of \(runner.total)"
-                            : "Reading the folder")
+        VStack(alignment: .leading, spacing: 8) {
+            HStack {
+                Text(runner.total > 0
+                     ? "\(runner.done) of \(runner.total)"
+                     : "Reading the folder…")
+                    .font(.subheadline.weight(.medium))
+                Spacer()
+                if runner.total > 0 {
+                    Text("\(percent)%")
+                        .font(.caption.monospacedDigit())
+                        .foregroundStyle(.secondary)
                 }
-                .padding(12)
-                .background(
-                    RoundedRectangle(cornerRadius: 10, style: .continuous)
-                        .fill(.ultraThinMaterial)
-                )
             }
-
-            if let polished = runner.polished {
-                ResultSummary(polished: polished, grouped: runner.grouped)
-            }
-
-            if runner.photos.isEmpty && runner.running {
-                EmptyResultsPlaceholder()
-            } else if !runner.photos.isEmpty {
-                PhotoResultsList(photos: runner.photos)
-            }
+            ProgressView(value: Double(runner.done), total: Double(max(runner.total, 1)))
+                .accessibilityLabel("Polishing progress")
+                .accessibilityValue(runner.total > 0
+                    ? "\(runner.done) of \(runner.total)"
+                    : "Reading the folder")
         }
+        .padding(12)
+        .background(
+            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                .fill(.ultraThinMaterial)
+        )
     }
 
     private var percent: Int {
@@ -348,12 +469,12 @@ private struct ResultSummary: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
-            Text(summaryLine)
+            Text("\(polished.processed) polished, \(polished.unchanged) unchanged")
                 .font(.headline)
                 .fixedSize(horizontal: false, vertical: true)
 
             HStack(spacing: 8) {
-                ForEach(gradeOrder, id: \.self) { grade in
+                ForEach(["PASS", "REVIEW", "FAIL", "SKIPPED"], id: \.self) { grade in
                     if let count = polished.counts[grade], count > 0 {
                         GradeChip(grade: grade, count: count)
                     }
@@ -385,157 +506,6 @@ private struct ResultSummary: View {
             RoundedRectangle(cornerRadius: 10, style: .continuous)
                 .fill(.ultraThinMaterial)
         )
-    }
-
-    private var gradeOrder: [String] { ["PASS", "REVIEW", "FAIL", "SKIPPED"] }
-
-    private var summaryLine: String {
-        "\(polished.processed) polished, \(polished.unchanged) unchanged"
-    }
-}
-
-private struct GradeChip: View {
-    let grade: String
-    let count: Int
-
-    var body: some View {
-        HStack(spacing: 5) {
-            Circle()
-                .fill(GradeStyle.color(grade))
-                .frame(width: 7, height: 7)
-            Text("\(count) \(grade.lowercased())")
-                .font(.caption.weight(.medium))
-                .foregroundStyle(.primary)
-        }
-        .padding(.horizontal, 9)
-        .padding(.vertical, 4)
-        .background(
-            Capsule(style: .continuous)
-                .fill(GradeStyle.color(grade).opacity(0.14))
-        )
-        .accessibilityElement(children: .ignore)
-        .accessibilityLabel("\(count) \(grade)")
-    }
-}
-
-private struct EmptyResultsPlaceholder: View {
-    var body: some View {
-        HStack(spacing: 10) {
-            ProgressView()
-                .controlSize(.small)
-            Text("Waiting for the first photo…")
-                .font(.callout)
-                .foregroundStyle(.secondary)
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(14)
-        .background(
-            RoundedRectangle(cornerRadius: 10, style: .continuous)
-                .strokeBorder(Color.secondary.opacity(0.25), style: StrokeStyle(lineWidth: 1, dash: [5, 4]))
-        )
-        .accessibilityElement(children: .combine)
-        .accessibilityLabel("Waiting for the first photo")
-    }
-}
-
-private struct PhotoResultsList: View {
-    let photos: [Event.Photo]
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Text("Photos")
-                .font(.subheadline.weight(.semibold))
-                .foregroundStyle(.secondary)
-
-            // Native List scans poorly in a compact utility; a plain stack reads like a tool log.
-            ScrollView {
-                LazyVStack(alignment: .leading, spacing: 0) {
-                    ForEach(Array(photos.reversed().enumerated()), id: \.element.id) { index, photo in
-                        PhotoRow(photo: photo)
-                        if index < photos.count - 1 {
-                            Divider().opacity(0.45)
-                        }
-                    }
-                }
-            }
-            .frame(minHeight: 140, maxHeight: 240)
-            .padding(.horizontal, 10)
-            .padding(.vertical, 4)
-            .background(
-                RoundedRectangle(cornerRadius: 10, style: .continuous)
-                    .fill(Color(nsColor: .controlBackgroundColor).opacity(0.65))
-            )
-            .overlay(
-                RoundedRectangle(cornerRadius: 10, style: .continuous)
-                    .strokeBorder(Color.secondary.opacity(0.22), lineWidth: 1)
-            )
-        }
-    }
-}
-
-private struct PhotoRow: View {
-    let photo: Event.Photo
-
-    var body: some View {
-        HStack(alignment: .firstTextBaseline, spacing: 10) {
-            GradeBadge(grade: photo.grade)
-            Text(photo.source)
-                .font(.system(.callout, design: .monospaced))
-                .lineLimit(1)
-                .truncationMode(.middle)
-            Spacer(minLength: 8)
-            if !photo.why.isEmpty {
-                Text(photo.why)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .lineLimit(1)
-                    .truncationMode(.tail)
-                    .frame(maxWidth: 260, alignment: .trailing)
-            }
-        }
-        .padding(.vertical, 7)
-        .accessibilityElement(children: .combine)
-        .accessibilityLabel("\(photo.grade), \(photo.source)")
-        .accessibilityHint(photo.why.isEmpty ? "" : photo.why)
-    }
-}
-
-private struct GradeBadge: View {
-    let grade: String
-
-    var body: some View {
-        Text(shortLabel)
-            .font(.caption2.weight(.bold))
-            .tracking(0.3)
-            .foregroundStyle(GradeStyle.color(grade))
-            .padding(.horizontal, 6)
-            .padding(.vertical, 2)
-            .background(
-                RoundedRectangle(cornerRadius: 4, style: .continuous)
-                    .fill(GradeStyle.color(grade).opacity(0.14))
-            )
-            .accessibilityHidden(true)
-    }
-
-    private var shortLabel: String {
-        switch grade {
-        case "PASS": return "PASS"
-        case "REVIEW": return "REVIEW"
-        case "FAIL": return "FAIL"
-        case "SKIPPED": return "SKIP"
-        default: return grade
-        }
-    }
-}
-
-private enum GradeStyle {
-    static func color(_ grade: String) -> Color {
-        switch grade {
-        case "PASS": return .green
-        case "REVIEW": return .orange
-        case "SKIPPED": return .secondary
-        default: return .red
-        }
     }
 }
 
@@ -648,36 +618,47 @@ private struct ErrorBanner: View {
 // MARK: - Primary action bar
 
 private struct ActionBar: View {
-    let folder: URL?
+    @Binding var folder: URL?
     let options: Options
     @ObservedObject var runner: Runner
+    let phase: FlowPhase
+    let onChooseDifferentFolder: () -> Void
 
     var body: some View {
         HStack(spacing: 10) {
-            if let polished = runner.polished {
-                Button {
-                    NSWorkspace.shared.open(URL(fileURLWithPath: polished.out))
-                } label: {
-                    Label("Show polished", systemImage: "folder")
+            if phase == .gallery || phase == .polish {
+                if let out = runner.outDir ?? runner.polished?.out {
+                    Button {
+                        NSWorkspace.shared.open(URL(fileURLWithPath: out))
+                    } label: {
+                        Label("Show in Finder", systemImage: "folder")
+                    }
+                    .accessibilityLabel("Show polished photos in Finder")
+                    .help("Open the polished output folder")
                 }
-                .accessibilityLabel("Show polished photos")
-                .help("Open the polished output folder")
 
-                Button {
-                    NSWorkspace.shared.open(URL(fileURLWithPath: polished.sheet))
-                } label: {
-                    Label("Contact sheet", systemImage: "rectangle.grid.2x2")
+                if let sheet = runner.polished?.sheet {
+                    Button {
+                        NSWorkspace.shared.open(URL(fileURLWithPath: sheet))
+                    } label: {
+                        Label("Contact sheet", systemImage: "rectangle.grid.2x2")
+                    }
+                    .accessibilityLabel("Open contact sheet")
                 }
-                .accessibilityLabel("Open contact sheet")
-            }
 
-            if let grouped = runner.grouped, let first = grouped.sheets.first {
-                Button {
-                    NSWorkspace.shared.open(URL(fileURLWithPath: first))
-                } label: {
-                    Label("People sheet", systemImage: "person.2")
+                if let grouped = runner.grouped, let first = grouped.sheets.first {
+                    Button {
+                        NSWorkspace.shared.open(URL(fileURLWithPath: first))
+                    } label: {
+                        Label("People sheet", systemImage: "person.2")
+                    }
+                    .accessibilityLabel("Open people sheet")
                 }
-                .accessibilityLabel("Open people sheet")
+
+                if phase == .gallery {
+                    Button("Choose folder…", action: onChooseDifferentFolder)
+                        .accessibilityLabel("Choose a different photos folder")
+                }
             }
 
             Spacer(minLength: 8)
@@ -695,17 +676,17 @@ private struct ActionBar: View {
                 Button {
                     if let folder { runner.run(folder: folder, options: options) }
                 } label: {
-                    Text(runner.polished == nil ? "Polish" : "Polish again")
+                    Text(phase == .gallery ? "Polish again" : "Polish")
                 }
                 .keyboardShortcut(.defaultAction)
                 .buttonStyle(.borderedProminent)
                 .controlSize(.large)
                 .disabled(folder == nil)
-                .accessibilityLabel(runner.polished == nil ? "Polish photos" : "Polish again")
+                .accessibilityLabel(phase == .gallery ? "Polish again" : "Polish photos")
                 .accessibilityHint(folder == nil
                     ? "Choose a folder first"
                     : "Runs headshots on the selected folder")
-                .help(folder == nil ? "Drop or choose a folder first" : "Return to polish (↩)")
+                .help(folder == nil ? "Drop or choose a folder first" : "Run polish (↩)")
             }
         }
     }

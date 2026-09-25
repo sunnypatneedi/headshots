@@ -16,6 +16,8 @@ final class Runner: ObservableObject {
     @Published var grouped: Event.Grouped?
     @Published var lines: [String] = []
     @Published var failure: String?
+    /// Output folder from the `start` / `polished` events — gallery tiles resolve `photo.output` here.
+    @Published var outDir: String?
 
     private var process: Process?
     private var userCancelled = false
@@ -39,13 +41,34 @@ final class Runner: ObservableObject {
         failure = "Polishing was cancelled."
     }
 
+    /// Clear results so the window returns to the Select step (new folder / polish again from scratch).
+    func resetResults() {
+        if running {
+            userCancelled = true
+            process?.terminate()
+            process = nil
+            running = false
+            // Leave userCancelled set until terminationHandler runs, so SIGTERM stderr is ignored.
+        } else {
+            userCancelled = false
+        }
+        photos = []
+        lines = []
+        polished = nil
+        grouped = nil
+        failure = nil
+        outDir = nil
+        done = 0
+        total = 0
+    }
+
     func run(folder: URL, options: Options) {
         guard let tool = Runner.toolURL else {
             failure = "The headshots command is missing from this app. Build it with `make app`, "
                 + "or install it with `pipx install headshots`."
             return
         }
-        photos = []; lines = []; polished = nil; grouped = nil; failure = nil
+        photos = []; lines = []; polished = nil; grouped = nil; failure = nil; outDir = nil
         done = 0; total = 0; running = true; userCancelled = false
 
         let task = Process()
@@ -97,13 +120,15 @@ final class Runner: ObservableObject {
 
     private func apply(_ event: Event) {
         switch event {
-        case let .start(total, _, _):
+        case let .start(total, _, out):
             self.total = total
+            self.outDir = out
         case let .photo(p):
             photos.append(p)
             done += 1
         case let .polished(p):
             polished = p
+            outDir = p.out
         case let .grouped(g):
             grouped = g
         case let .log(text):
