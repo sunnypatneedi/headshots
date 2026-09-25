@@ -80,3 +80,55 @@ enum Event {
     private struct Start: Decodable { let total: Int; let unchanged: Int; let out: String }
     private struct Log: Decodable { let text: String }
 }
+
+/// `_report.json` shape used to hydrate the gallery when `photo` events were missed (older CLI).
+struct PolishedReport: Decodable {
+    let photos: [Entry]
+
+    struct Entry: Decodable {
+        let source: String
+        let grade: String
+        let reasons: [String]?
+        let notes: [String]?
+        let output: String?
+        let setReasons: [String]?
+
+        enum CodingKeys: String, CodingKey {
+            case source, grade, reasons, notes, output
+            case setReasons = "set_reasons"
+        }
+
+        func asPhoto() -> Event.Photo {
+            Event.Photo(
+                source: source,
+                grade: effectiveGrade,
+                reasons: reasons ?? [],
+                notes: notes ?? [],
+                output: output
+            )
+        }
+
+        private var effectiveGrade: String {
+            if output == nil { return "SKIPPED" }
+            let base = grade
+            if let setReasons, !setReasons.isEmpty {
+                return Self.maxGrade(base, "REVIEW")
+            }
+            return base
+        }
+
+        private static let order = ["PASS", "REVIEW", "FAIL", "SKIPPED"]
+
+        private static func maxGrade(_ a: String, _ b: String) -> String {
+            let ia = order.firstIndex(of: a) ?? 0
+            let ib = order.firstIndex(of: b) ?? 0
+            return order[max(ia, ib)]
+        }
+    }
+
+    static func load(from outDir: String) -> PolishedReport? {
+        let url = URL(fileURLWithPath: outDir).appendingPathComponent("_report.json")
+        guard let data = try? Data(contentsOf: url) else { return nil }
+        return try? JSONDecoder().decode(PolishedReport.self, from: data)
+    }
+}

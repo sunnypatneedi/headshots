@@ -91,6 +91,7 @@ struct ContentView: View {
                 photos: runner.photos,
                 outDir: runner.outDir,
                 running: true,
+                polished: runner.polished,
                 filter: $galleryFilter,
                 selection: $gallerySelection
             )
@@ -107,6 +108,7 @@ struct ContentView: View {
                 photos: runner.photos,
                 outDir: runner.outDir ?? runner.polished?.out,
                 running: false,
+                polished: runner.polished,
                 filter: $galleryFilter,
                 selection: $gallerySelection
             )

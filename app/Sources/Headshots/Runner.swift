@@ -108,6 +108,8 @@ final class Runner: ObservableObject {
                 // Exit code 1 just means at least one photo graded FAIL, which is a result, not an error.
                 if finished.terminationStatus > 1 {
                     self.failure = stderr.isEmpty ? "The command stopped unexpectedly." : stderr
+                } else {
+                    self.hydrateGalleryIfNeeded()
                 }
             }
         }
@@ -129,12 +131,55 @@ final class Runner: ObservableObject {
         case let .polished(p):
             polished = p
             outDir = p.out
+            hydrateGalleryIfNeeded()
         case let .grouped(g):
             grouped = g
         case let .log(text):
             let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
             if !trimmed.isEmpty { lines.append(trimmed) }
         }
+    }
+
+    /// Defense in depth: older CLIs skipped `photo` events on full cache hits. Read `_report.json`
+    /// (or scan polished JPEGs) so the gallery still has tiles.
+    private func hydrateGalleryIfNeeded() {
+        guard photos.isEmpty else { return }
+        let dir = outDir ?? polished?.out
+        guard let dir else { return }
+
+        if let report = PolishedReport.load(from: dir), !report.photos.isEmpty {
+            photos = report.photos.map { $0.asPhoto() }
+            done = photos.count
+            if total < photos.count { total = photos.count }
+            return
+        }
+
+        let folder = URL(fileURLWithPath: dir)
+        guard let files = try? FileManager.default.contentsOfDirectory(
+            at: folder,
+            includingPropertiesForKeys: nil,
+            options: [.skipsHiddenFiles]
+        ) else { return }
+
+        let jpgs = files.filter { url in
+            let name = url.lastPathComponent
+            guard name.lowercased().hasSuffix(".jpg") || name.lowercased().hasSuffix(".jpeg") else { return false }
+            return !name.hasPrefix("_")
+        }
+        .sorted { $0.lastPathComponent.localizedStandardCompare($1.lastPathComponent) == .orderedAscending }
+
+        guard !jpgs.isEmpty else { return }
+        photos = jpgs.map { url in
+            Event.Photo(
+                source: url.lastPathComponent,
+                grade: "PASS",
+                reasons: [],
+                notes: ["Loaded from polished folder"],
+                output: url.lastPathComponent
+            )
+        }
+        done = photos.count
+        if total < photos.count { total = photos.count }
     }
 }
 

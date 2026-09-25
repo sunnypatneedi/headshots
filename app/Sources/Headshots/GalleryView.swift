@@ -25,6 +25,8 @@ struct GalleryPanel: View {
     let photos: [Event.Photo]
     let outDir: String?
     let running: Bool
+    /// When set, empty gallery after a run can explain cache/reuse instead of a blank pane.
+    var polished: Event.Polished? = nil
     @Binding var filter: GalleryFilter
     @Binding var selection: Event.Photo.ID?
 
@@ -57,12 +59,7 @@ struct GalleryPanel: View {
                     showsProgress: true
                 )
             } else if photos.isEmpty {
-                GalleryEmptyState(
-                    title: "No polished photos yet",
-                    detail: "Run Polish to build a matched set. Results land in this gallery.",
-                    systemImage: "photo.on.rectangle.angled",
-                    showsProgress: false
-                )
+                cacheOrFreshEmptyState
             } else if filtered.isEmpty {
                 GalleryEmptyState(
                     title: "Nothing in \(filter.rawValue.lowercased())",
@@ -92,6 +89,32 @@ struct GalleryPanel: View {
                 onClose: { selection = nil }
             )
         }
+    }
+
+    @ViewBuilder
+    private var cacheOrFreshEmptyState: some View {
+        if let polished, polished.unchanged > 0 || polished.processed > 0 {
+            GalleryEmptyState(
+                title: "Gallery couldn’t load tiles",
+                detail: cacheMissDetail(polished),
+                systemImage: "photo.on.rectangle.angled",
+                showsProgress: false
+            )
+        } else {
+            GalleryEmptyState(
+                title: "No polished photos yet",
+                detail: "Run Polish to build a matched set. Results land in this gallery.",
+                systemImage: "photo.on.rectangle.angled",
+                showsProgress: false
+            )
+        }
+    }
+
+    private func cacheMissDetail(_ polished: Event.Polished) -> String {
+        if polished.unchanged > 0 && polished.processed == 0 {
+            return "\(polished.unchanged) unchanged from cache, but no photo list arrived. Use Show in Finder, or Polish again — originals stay untouched."
+        }
+        return "Polished outputs should be under the polished folder. Use Show in Finder, or Polish again."
     }
 
     private var selectedPhoto: Binding<Event.Photo?> {
