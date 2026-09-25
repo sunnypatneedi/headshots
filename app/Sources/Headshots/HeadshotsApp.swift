@@ -6,7 +6,12 @@ struct HeadshotsApp: App {
         WindowGroup("Headshots") {
             ContentView()
         }
+        .windowStyle(.automatic)
+        .windowToolbarStyle(.unifiedCompact(showsTitle: true))
         .windowResizability(.contentMinSize)
-        .commands { CommandGroup(replacing: .newItem) {} }
+        .defaultSize(width: 680, height: 620)
+        .commands {
+            CommandGroup(replacing: .newItem) {}
+        }
     }
 }
