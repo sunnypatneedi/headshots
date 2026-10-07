@@ -9,7 +9,6 @@ import io
 import json
 from pathlib import Path
 
-import pytest
 from PIL import Image
 
 from headshots import events, polish
