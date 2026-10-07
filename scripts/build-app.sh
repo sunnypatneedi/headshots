@@ -50,5 +50,17 @@ codesign --verify --verbose=2 "$APP" 2>&1 | tail -2
 echo "==> checking it starts"
 "$RES/bin/headshots" --version
 
+echo "==> probing frozen binary (imports + empty polish)"
+# Absolute import + OpenCV/NumPy/Pillow must load. Empty folder → "No photos found" (non-zero exit).
+PROBE_DIR=$(mktemp -d)
+PROBE_OUT=$("$RES/bin/headshots" polish "$PROBE_DIR" 2>&1 || true)
+rm -rf "$PROBE_DIR"
+echo "$PROBE_OUT" | grep -q "No photos found" || {
+    echo "frozen binary probe failed — expected 'No photos found' from empty polish:"
+    echo "$PROBE_OUT"
+    exit 1
+}
+echo "    ok — empty polish reported No photos found"
+
 echo
 echo "Built $APP  ($VERSION, $ARCH)"

@@ -729,8 +729,14 @@ def run(folder: Path, out_dir: Path, st: Settings, model: str, force: bool = Fal
         cv2.setNumThreads(1)                        # parallelize across photos, not inside each
     jobs = [lambda p=p: process(p, out_dir, model, st, notes.get(p, [])) for p in todo]
     jobs += [lambda e=e: rejudge(e, folder, out_dir, model, st) for e in hand_edited]
-    events.emit("start", total=len(jobs), unchanged=len(reuse), folder=str(folder), out=str(out_dir))
+    # total includes reuse so --json clients (and the Mac gallery) see every photo, not only fresh work
+    events.emit("start", total=len(jobs) + len(reuse), unchanged=len(reuse),
+                folder=str(folder), out=str(out_dir))
     marks = {"PASS": "✓", "REVIEW": "!", "FAIL": "✗", "SKIPPED": "✗"}
+    # Cache hits never enter `jobs`, but consumers still need one `photo` event per output.
+    for e in sorted(reuse, key=lambda e: e["source"]):
+        events.emit("photo", source=e["source"], grade=final_grade(e),
+                    reasons=e["reasons"], notes=e["notes"], output=e.get("output"))
     fresh: list[dict] = []
     with ThreadPoolExecutor(max_workers=min(8, os.cpu_count() or 2)) as pool:
         for i in range(0, len(jobs), 24):           # in chunks, saving progress: big sets can resume
