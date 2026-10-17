@@ -19,10 +19,6 @@ final class Runner: ObservableObject {
 
     private var process: Process?
 
-    private static let photoExtensions: Set<String> = [
-        "jpg", "jpeg", "png", "heic", "heif", "tif", "tiff", "webp"
-    ]
-
     static var toolURL: URL? {
         let bundled = Bundle.main.resourceURL?.appendingPathComponent("bin/headshots")
         if let bundled, FileManager.default.isExecutableFile(atPath: bundled.path) { return bundled }
@@ -47,7 +43,7 @@ final class Runner: ObservableObject {
             guard (try? url.resourceValues(forKeys: [.isRegularFileKey]).isRegularFile) == true else {
                 return false
             }
-            return photoExtensions.contains(url.pathExtension.lowercased())
+            return DropIntake.isSupportedImage(url)
         }.count
     }
 
