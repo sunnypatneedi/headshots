@@ -19,6 +19,10 @@ final class Runner: ObservableObject {
 
     private var process: Process?
 
+    private static let photoExtensions: Set<String> = [
+        "jpg", "jpeg", "png", "heic", "heif", "tif", "tiff", "webp"
+    ]
+
     static var toolURL: URL? {
         let bundled = Bundle.main.resourceURL?.appendingPathComponent("bin/headshots")
         if let bundled, FileManager.default.isExecutableFile(atPath: bundled.path) { return bundled }
@@ -30,10 +34,38 @@ final class Runner: ObservableObject {
         return nil
     }
 
+    /// Top-level image count for the Check step. Subfolders are ignored, matching the CLI.
+    static func countPhotos(in folder: URL?) -> Int {
+        guard let folder else { return 0 }
+        let fm = FileManager.default
+        guard let items = try? fm.contentsOfDirectory(
+            at: folder,
+            includingPropertiesForKeys: [.isRegularFileKey],
+            options: [.skipsHiddenFiles]
+        ) else { return 0 }
+        return items.filter { url in
+            guard (try? url.resourceValues(forKeys: [.isRegularFileKey]).isRegularFile) == true else {
+                return false
+            }
+            return photoExtensions.contains(url.pathExtension.lowercased())
+        }.count
+    }
+
     func cancel() {
         process?.terminate()
         process = nil
         running = false
+    }
+
+    func resetResults() {
+        cancel()
+        photos = []
+        lines = []
+        polished = nil
+        grouped = nil
+        failure = nil
+        done = 0
+        total = 0
     }
 
     func run(folder: URL, options: Options) {
@@ -76,7 +108,9 @@ final class Runner: ObservableObject {
                 self.process = nil
                 // Exit code 1 just means at least one photo graded FAIL, which is a result, not an error.
                 if finished.terminationStatus > 1 {
-                    self.failure = stderr.isEmpty ? "The command stopped unexpectedly." : stderr
+                    self.failure = stderr.isEmpty
+                        ? "The command stopped unexpectedly. Try Polish again, or run `headshots` in Terminal for detail."
+                        : stderr
                 }
             }
         }
@@ -118,11 +152,53 @@ struct Options {
         }
     }
 
+    /// Framing presets map to `--zoom`. Defaults match the Finish mockup recommendations.
+    enum Framing: String, CaseIterable, Identifiable {
+        case headShoulders, closeUp, halfBody
+        var id: String { rawValue }
+
+        var title: String {
+            switch self {
+            case .headShoulders: return "Head & shoulders"
+            case .closeUp: return "Close-up"
+            case .halfBody: return "Half body"
+            }
+        }
+
+        var detail: String {
+            switch self {
+            case .headShoulders: return "Best for most uses"
+            case .closeUp: return "Face fills the frame"
+            case .halfBody: return "More of the outfit"
+            }
+        }
+
+        var symbol: String {
+            switch self {
+            case .headShoulders: return "person.crop.rectangle"
+            case .closeUp: return "person.crop.circle"
+            case .halfBody: return "person"
+            }
+        }
+
+        var zoom: Double {
+            switch self {
+            case .headShoulders: return 0.85
+            case .closeUp: return 1.15
+            case .halfBody: return 0.70
+            }
+        }
+    }
+
     var shape: Shape = .fourFive
     var width = 1600
-    var zoom = 1.0
+    var framing: Framing = .headShoulders
     var blackAndWhite = false
+    /// Soft studio runs the tone/colour finish. Keep original is crop-only (`--no-finish`).
+    var softStudio = true
     var groupByPerson = true
+
+    var zoom: Double { framing.zoom }
 
     func arguments(folder: URL) -> [String] {
         var a = [groupByPerson ? "run" : "polish", folder.path,
@@ -130,6 +206,7 @@ struct Options {
                  "--width", String(width),
                  "--zoom", String(format: "%.2f", zoom)]
         a.append(blackAndWhite ? "--bw" : "--no-bw")
+        a.append(softStudio ? "--finish" : "--no-finish")
         return a
     }
 }

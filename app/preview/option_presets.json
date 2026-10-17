@@ -1,0 +1,21 @@
+{
+  "framing": {
+    "headShoulders": { "title": "Head & shoulders", "zoom": 0.85, "recommended": true },
+    "closeUp": { "title": "Close-up", "zoom": 1.15, "recommended": false },
+    "halfBody": { "title": "Half body", "zoom": 0.70, "recommended": false }
+  },
+  "defaults": {
+    "framing": "headShoulders",
+    "blackAndWhite": false,
+    "softStudio": true,
+    "groupByPerson": true,
+    "ratio": "4:5",
+    "width": 1600
+  },
+  "cli": {
+    "softStudio_true": "--finish",
+    "softStudio_false": "--no-finish",
+    "bw_true": "--bw",
+    "bw_false": "--no-bw"
+  }
+}
