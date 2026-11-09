@@ -1,0 +1,2 @@
+{ "title": "headshots og:video v4", "theme": "blank", "duration": 8, "fps": 60, "width": 1200, "height": 630, "styles": ["style.css"],
+  "preload": ["/films/_og/assets/hs/p-a.jpg", "/films/_og/assets/hs/p-b.jpg", "/films/_og/assets/hs/p-c.jpg", "/films/_og/assets/hs/p-d.jpg", "/films/_og/assets/hs/p-e.jpg", "/films/_og/assets/hs/p-f.jpg"] }
