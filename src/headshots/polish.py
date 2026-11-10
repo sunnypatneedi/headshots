@@ -8,7 +8,8 @@ reshaping), and save an sRGB JPEG with all metadata (GPS included) stripped.
 
 Judge, per output file: re-detect the face in the saved JPEG and re-measure framing, clipping,
 skin color, eye sharpness, stray faces, fidelity to the original and metadata, then grade it
-PASS / REVIEW / FAIL. A set-level pass flags head sizes that don't match the rest.
+PASS / REVIEW / FAIL. A set-level pass flags head sizes that don't match the rest. Decide can
+then raise a PASS to REVIEW; it does not change the measurement grade.
 
 Results land in <folder>/polished/ with _contact-sheet.jpg and _report.json. Originals are never
 modified. Re-runs skip photos that haven't changed and never overwrite an output you edited.
@@ -33,7 +34,7 @@ import cv2
 import numpy as np
 from PIL import Image, ImageCms, ImageDraw, ImageFont, ImageOps
 
-from . import events, models
+from . import decide, events, models
 from .__init__ import __version__
 
 try:
@@ -599,7 +600,11 @@ def judge_set(entries: list[dict]) -> str | None:
 def final_grade(e: dict) -> str:
     if not e.get("output"):
         return "SKIPPED"
-    return max(e["grade"], "REVIEW" if e.get("set_reasons") else "PASS", key=GRADES.index)
+    grade = e["grade"]
+    decided = e.get("decide")
+    if isinstance(decided, dict) and decided.get("grade") in GRADES:
+        grade = decided["grade"]
+    return max(grade, "REVIEW" if e.get("set_reasons") else "PASS", key=GRADES.index)
 
 
 # ---------------------------------------------------------------- Apple Photos exports
@@ -701,8 +706,11 @@ def rejudge(e: dict, folder: Path, out_dir: Path, model: str, st: Settings) -> d
             "reasons": v.reasons, "metrics": v.metrics, "notes": notes}
 
 
-def run(folder: Path, out_dir: Path, st: Settings, model: str, force: bool = False) -> list[dict]:
+def run(folder: Path, out_dir: Path, st: Settings, model: str, force: bool = False,
+        decider=None) -> list[dict]:
     """Polish and judge whatever is new or changed; reuse everything else from _report.json."""
+    if decider is None:
+        decider = decide.choose("local")
     report_path, sheet = out_dir / "_report.json", out_dir / "_contact-sheet.jpg"   # sheet = page 1
     try:
         old_text = report_path.read_text()
@@ -723,6 +731,8 @@ def run(folder: Path, out_dir: Path, st: Settings, model: str, force: bool = Fal
             reuse.append(e)
         else:
             todo.append(p)
+    for e in reuse:
+        decide.apply(e, decider)
 
     t0, threads = time.perf_counter(), cv2.getNumThreads()
     if len(todo) + len(hand_edited) > 1:
@@ -735,11 +745,20 @@ def run(folder: Path, out_dir: Path, st: Settings, model: str, force: bool = Fal
     with ThreadPoolExecutor(max_workers=min(8, os.cpu_count() or 2)) as pool:
         for i in range(0, len(jobs), 24):           # in chunks, saving progress: big sets can resume
             chunk = list(pool.map(lambda job: job(), jobs[i:i + 24]))
+            for e in chunk:
+                decide.apply(e, decider)
             fresh += chunk
             for e in sorted(chunk, key=lambda e: e["source"]):
+                shown = final_grade(e)
                 why = "; ".join(e["reasons"] + e["notes"])
-                events.emit('photo', source=e['source'], grade=final_grade(e), reasons=e['reasons'], notes=e['notes'], output=e.get('output'))
-                events.say(f"{marks[final_grade(e)]} {final_grade(e):<7} {e['source']:<16} {why}")
+                remark = decide.remarks(e)
+                if remark:
+                    why = f"{why}  {remark}".strip()
+                decided = e.get("decide") if isinstance(e.get("decide"), dict) else None
+                events.emit("photo", source=e["source"], grade=shown, reasons=e["reasons"], notes=e["notes"],
+                            output=e.get("output"), confidence=None if decided is None else decided.get("confidence"),
+                            decide=decided)
+                events.say(f"{marks[shown]} {shown:<7} {e['source']:<16} {why}")
             if i + 24 < len(jobs):
                 report_path.write_text(json.dumps({"settings": asdict(st), "set_note": None,
                                                    "photos": sorted(reuse + fresh, key=lambda e: e["source"])}))
@@ -766,7 +785,8 @@ def run(folder: Path, out_dir: Path, st: Settings, model: str, force: bool = Fal
     return entries
 
 
-def watch(folder: Path, out_dir: Path, st: Settings, model: str, every: float = 2.0) -> None:
+def watch(folder: Path, out_dir: Path, st: Settings, model: str, every: float = 2.0,
+          decider=None) -> None:
     """Re-run whenever the folder's photos change, once files have finished copying."""
     def snapshot():
         return {p.name: (p.stat().st_size, p.stat().st_mtime_ns) for p in pick_sources(folder)[0]}
@@ -780,7 +800,7 @@ def watch(folder: Path, out_dir: Path, st: Settings, model: str, every: float = 
                 time.sleep(every)                    # let copies/exports finish
                 if snapshot() == now:
                     events.say()
-                    run(folder, out_dir, st, model)
+                    run(folder, out_dir, st, model, decider=decider)
                     now = snapshot()
                 last = now
     except KeyboardInterrupt:
@@ -866,7 +886,8 @@ def contact_sheet(entries: list[dict], folder: Path, out_dir: Path, path: Path) 
         draw.ellipse([x, y + THUMB_H + 12, x + 12, y + THUMB_H + 24], fill=colors[grade])
         draw.text((x + 20, y + THUMB_H + 8), f"{grade}  {e['source']}", font=font, fill=(25, 25, 25))
         line, ty = "", y + THUMB_H + 34
-        for word in "; ".join(e["reasons"] + e.get("set_reasons", []) + e["notes"]).split(" "):
+        bits = [decide.remarks(e), *e["reasons"], *e.get("set_reasons", []), *e["notes"]]
+        for word in "; ".join(bit for bit in bits if bit).split(" "):
             if line and draw.textlength(f"{line} {word}", font=small) > card_w:
                 draw.text((x, ty), line, font=small, fill=(95, 95, 95))
                 line, ty = word, ty + 19
