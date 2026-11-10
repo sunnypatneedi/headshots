@@ -63,7 +63,7 @@ Interactive architecture map (Archify) for both audiences — open the HTML and 
 
 - **Plain story** — drop a folder, frame/check the set, group people
 - **Technical stack** — SwiftUI shell → Python CLI → polish / group → YuNet + SFace
-- **Stays on device** — local disk only; network is a one-time SHA-256-pinned model fetch
+- **Stays on device** — local disk only; network is a one-time SHA-256-pinned model fetch, plus an optional `--decide jev` call
 
 [Open the diagram](./docs/architecture/headshots.html) · source: [`headshots.architecture.json`](./docs/architecture/headshots.architecture.json)
 
@@ -98,12 +98,33 @@ Useful flags:
 | `--bw` | black and white |
 | `--no-finish` | crop only, no tone or colour work |
 | `--watch` | keep running, polish photos as they land |
+| `--decide local` | how sure the grade is. The default. `jev` asks a remote model and needs premium |
 | `--json` | one JSON object per line, for scripting. The app uses this |
 
 Results go to `<folder>/polished/`. **Originals are never modified.** A second run skips photos
 that have not changed, and never overwrites an output you have edited by hand — it re-checks it
 instead. Settings are remembered per output folder, so photos you add in November match the ones
 you shot in September without you having to remember what you passed.
+
+## Free and premium
+
+Framing, judging, and grouping are free, and they stay on your machine. The free path also runs
+a local decide pass. It reports how sure the grade is. It rarely moves a PASS to REVIEW, because
+it does not measure how close each check sat to its line. A pass just inside a one-sided check
+does move. Eye sharpness of 0.61 is one of those.
+
+| | Free | Premium |
+|---|---|---|
+| Frame, judge, group, `--decide local` | yes | yes |
+| `--decide jev` | no. One line, then the local pass | yes, and it needs `TYPESAFE_API_KEY` |
+
+`--decide jev` POSTs the grade, the reasons, and the measurements to `https://api.typesafe.ai`.
+It does not send the photo, a path, or pixels. If the key is missing or the request fails, the
+folder finishes on the local pass, and the tool says so once.
+
+`headshots upgrade` prints a Stripe Payment Link and writes `~/.config/headshots/receipt.json`.
+The link is `HEADSHOTS_CHECKOUT_URL` when that is set, and otherwise the `BUY` link in the package.
+Details, and the parts that are not built yet, are in [Premium](docs/PREMIUM.md).
 
 ## How it frames
 
@@ -173,7 +194,8 @@ Claims you can check rather than take on faith:
 
 | Claim | How to check |
 |---|---|
-| It only ever talks to one host, for two files | `grep -rn "http" src/` — all of it is in `models.py` |
+| The free path only talks to one host, for two files | `grep -n "http" src/headshots/*.py`. Downloads are in `models.py`. `decide.py` names `api.typesafe.ai` and talks to it only with `--decide jev` |
+| `--decide jev` sends measurements, not photos | the POST body is the grade, the reasons, and the metrics. No pixels and no file paths |
 | Models are pinned, not trusted | SHA-256 in `models.py`; a mismatch is discarded, not used |
 | It works with the network off | `headshots models`, then pull the plug |
 | Fingerprints are never stored | `grep -rn "csv\|write" src/headshots/group.py` |
@@ -205,7 +227,7 @@ See [NOTICE](NOTICE) for attribution and a caveat about SFace's training data.
 
 ```console
 $ make dev     # install with the test tools
-$ make test    # 34 tests: no photos, no models, no network
+$ make test    # 71 tests: no photos, no models, no network
 $ make lint
 $ make app     # build Headshots.app into dist/  (macOS)
 $ make dmg

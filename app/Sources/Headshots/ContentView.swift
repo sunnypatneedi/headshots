@@ -1,23 +1,19 @@
-// Four-step product flow: Add Photos → Check Photos → Finish → Save.
-// Notion-flat chrome on named role tokens. Interior principles: reserve space for
-// every state, move only when something happened, honour reduced motion, keep
-// frequent controls under 120ms.
+// Three-step product flow: Select folder → Polish → Gallery of polished outputs.
+// Craft: Harbor/Familiar calm hierarchy, Ice compact chrome, IINA image-first lightbox.
+// Tokens + drop intake from the AAA polish pass (Theme.swift, DropIntake.swift).
 
 import AppKit
 import SwiftUI
 import UniformTypeIdentifiers
 
-private enum FlowStep: Int, CaseIterable, Identifiable {
-    case add, check, finish, save
-
-    var id: Int { rawValue }
+private enum FlowPhase: Int, CaseIterable {
+    case select, polish, gallery
 
     var title: String {
         switch self {
-        case .add: return "Add Photos"
-        case .check: return "Check Photos"
-        case .finish: return "Finish"
-        case .save: return "Save"
+        case .select: return "Select"
+        case .polish: return "Polish"
+        case .gallery: return "Gallery"
         }
     }
 }
@@ -25,128 +21,124 @@ private enum FlowStep: Int, CaseIterable, Identifiable {
 struct ContentView: View {
     @StateObject private var runner = Runner()
     @State private var folder: URL?
-    @State private var photoCount = 0
     @State private var options = Options()
     @State private var targeted = false
     @State private var dropMessage: String?
-    @State private var stepOverride: FlowStep?
+    @State private var galleryFilter: GalleryFilter = .all
+    @State private var gallerySelection: Event.Photo.ID?
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
-    private var step: FlowStep {
-        if let stepOverride { return stepOverride }
-        if runner.polished != nil || (!runner.photos.isEmpty && !runner.running) { return .save }
-        if runner.running { return .finish }
-        if folder != nil { return .check }
-        return .add
+    private var phase: FlowPhase {
+        if runner.running { return .polish }
+        if runner.polished != nil || !runner.photos.isEmpty { return .gallery }
+        return .select
     }
-
-    /// Drop is live on Add / Check / Finish / Save when idle — not while polishing.
-    private var dropsEnabled: Bool { !runner.running }
 
     var body: some View {
-        HStack(spacing: 0) {
-            Sidebar(
-                step: step,
-                onSelect: navigate(to:),
-                canVisit: canVisit(_:)
-            )
-            .frame(width: 220)
-
-            Divider().background(HSTheme.border)
-
-            mainPane
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-        }
-        .background(HSTheme.canvas)
-        .frame(minWidth: 720, minHeight: 560)
-        .onChange(of: folder) { url in
-            photoCount = Runner.countPhotos(in: url)
-            if url != nil, stepOverride == .add || stepOverride == nil {
-                stepOverride = nil
-            }
-        }
-    }
-
-    @ViewBuilder
-    private var mainPane: some View {
         VStack(spacing: 0) {
             ScrollView {
-                VStack(alignment: .leading, spacing: HSTheme.Space.xl) {
-                    switch step {
-                    case .add:
-                        WelcomePane(
-                            folder: $folder,
-                            targeted: $targeted,
-                            dropMessage: $dropMessage,
-                            disabled: !dropsEnabled,
-                            onApply: applyDrop(urls:)
-                        )
-                    case .check:
-                        CheckPane(
-                            folder: folder,
-                            photoCount: photoCount,
-                            targeted: $targeted,
-                            dropsEnabled: dropsEnabled,
-                            onApply: applyDrop(urls:),
-                            onChangeFolder: {
-                                stepOverride = .add
-                                folder = nil
-                                dropMessage = nil
-                                runner.resetResults()
-                            },
-                            onContinue: { stepOverride = .finish }
-                        )
-                    case .finish:
-                        if runner.running {
-                            ProcessingPane(runner: runner)
-                        } else {
-                            FinishPane(
-                                options: $options,
-                                folder: folder,
-                                targeted: $targeted,
-                                dropsEnabled: dropsEnabled,
-                                onApply: applyDrop(urls:)
-                            )
-                        }
-                    case .save:
-                        ResultsPane(
-                            runner: runner,
-                            folder: folder,
-                            targeted: $targeted,
-                            dropsEnabled: dropsEnabled,
-                            onApply: applyDrop(urls:)
-                        )
+                VStack(alignment: .leading, spacing: HSTheme.Space.lg) {
+                    FlowStepper(phase: phase)
+
+                    switch phase {
+                    case .select:
+                        selectStep
+                    case .polish:
+                        polishStep
+                    case .gallery:
+                        galleryStep
                     }
 
                     if let dropMessage {
                         DropMessageBanner(message: dropMessage) {
                             self.dropMessage = nil
                         }
+                        .transition(panelTransition)
                     }
 
                     if let failure = runner.failure {
-                        ErrorBanner(message: failure) {
-                            runner.failure = nil
-                        }
+                        ErrorBanner(message: failure, onDismiss: { runner.failure = nil })
+                            .transition(panelTransition)
                     }
                 }
                 .padding(HSTheme.Space.xl)
-                .frame(maxWidth: 720, alignment: .leading)
-                .frame(maxWidth: .infinity, alignment: .center)
-                .animation(.hsPanel(reduceMotion: reduceMotion), value: step)
+                .animation(.hsPanel(reduceMotion: reduceMotion), value: phase)
+                .animation(.hsPanel(reduceMotion: reduceMotion), value: runner.failure)
+                .animation(.hsPanel(reduceMotion: reduceMotion), value: dropMessage)
             }
 
+            Divider()
             ActionBar(
-                step: step,
-                folder: folder,
-                photoCount: photoCount,
+                folder: $folder,
                 options: options,
                 runner: runner,
-                onBack: goBack,
-                onContinue: goForward
+                phase: phase,
+                onChooseDifferentFolder: chooseDifferentFolder
+            )
+            .padding(.horizontal, HSTheme.Space.xl)
+            .padding(.vertical, 14)
+            .background(.bar)
+        }
+        .background(WindowBackdrop())
+        .frame(minWidth: 680, minHeight: 600)
+    }
+
+    // MARK: Steps
+
+    private var selectStep: some View {
+        VStack(alignment: .leading, spacing: HSTheme.Space.lg) {
+            DropZone(
+                folder: $folder,
+                targeted: $targeted,
+                disabled: runner.running,
+                onApply: applyDrop(urls:)
+            )
+            .accessibilityLabel(dropAccessibilityLabel)
+            SettingsPanel(options: $options)
+        }
+    }
+
+    private var polishStep: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            FolderChip(folder: folder)
+            ProgressStrip(runner: runner)
+            GalleryPanel(
+                photos: runner.photos,
+                outDir: runner.outDir,
+                running: true,
+                polished: runner.polished,
+                filter: $galleryFilter,
+                selection: $gallerySelection
             )
         }
-        .background(HSTheme.surface)
+    }
+
+    private var galleryStep: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            FolderChip(folder: folder)
+            if let polished = runner.polished {
+                ResultSummary(polished: polished, grouped: runner.grouped)
+            }
+            GalleryPanel(
+                photos: runner.photos,
+                outDir: runner.outDir ?? runner.polished?.out,
+                running: false,
+                polished: runner.polished,
+                filter: $galleryFilter,
+                selection: $gallerySelection
+            )
+        }
+    }
+
+    private var dropAccessibilityLabel: String {
+        if let folder {
+            return "Selected folder \(folder.lastPathComponent). Click to choose another."
+        }
+        return "Drop a folder or photos such as JPG, or click to choose"
+    }
+
+    private var panelTransition: AnyTransition {
+        reduceMotion ? .opacity : .opacity.combined(with: .move(edge: .top))
     }
 
     private func applyDrop(urls: [URL]) {
@@ -157,354 +149,16 @@ struct ContentView: View {
         }
         dropMessage = nil
         if let next = result.folder {
-            if step == .save { runner.resetResults() }
             folder = next
-            stepOverride = nil
         }
     }
 
-    private func canVisit(_ target: FlowStep) -> Bool {
-        switch target {
-        case .add: return true
-        case .check: return folder != nil
-        case .finish: return folder != nil && photoCount > 0
-        case .save: return runner.polished != nil || !runner.photos.isEmpty
-        }
-    }
-
-    private func navigate(to target: FlowStep) {
-        guard canVisit(target), !runner.running else { return }
-        stepOverride = target
-    }
-
-    private func goBack() {
-        switch step {
-        case .add: break
-        case .check:
-            stepOverride = .add
-        case .finish:
-            stepOverride = folder == nil ? .add : .check
-        case .save:
-            stepOverride = .finish
-            runner.resetResults()
-        }
-    }
-
-    private func goForward() {
-        switch step {
-        case .add:
-            break
-        case .check:
-            stepOverride = .finish
-        case .finish:
-            guard let folder else { return }
-            stepOverride = nil
-            runner.run(folder: folder, options: options)
-        case .save:
-            break
-        }
-    }
-}
-
-// MARK: - Sidebar
-
-private struct Sidebar: View {
-    let step: FlowStep
-    let onSelect: (FlowStep) -> Void
-    let canVisit: (FlowStep) -> Bool
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: HSTheme.Space.xl) {
-            HStack(spacing: HSTheme.Space.sm) {
-                RoundedRectangle(cornerRadius: HSTheme.Radius.sm, style: .continuous)
-                    .fill(HSTheme.accent)
-                    .frame(width: 32, height: 32)
-                    .overlay {
-                        Image(systemName: "person.crop.rectangle")
-                            .foregroundStyle(HSTheme.accentOn)
-                            .font(.system(size: 14, weight: .semibold))
-                    }
-                    .accessibilityHidden(true)
-                VStack(alignment: .leading, spacing: 1) {
-                    Text("Headshots").font(HSTypography.brand).foregroundStyle(HSTheme.ink)
-                    Text("Polished portraits").font(HSTypography.brandTag).foregroundStyle(HSTheme.inkSecondary)
-                }
-            }
-            .accessibilityElement(children: .combine)
-
-            VStack(alignment: .leading, spacing: HSTheme.Space.xs) {
-                ForEach(FlowStep.allCases) { item in
-                    StepRow(
-                        index: item.rawValue + 1,
-                        title: item.title,
-                        state: state(for: item)
-                    ) {
-                        onSelect(item)
-                    }
-                    .disabled(!canVisit(item))
-                }
-            }
-
-            Spacer(minLength: 0)
-
-            PrivacyNote()
-        }
-        .padding(HSTheme.Space.lg)
-        .frame(maxHeight: .infinity, alignment: .top)
-        .background(HSTheme.surfaceMuted)
-    }
-
-    private func state(for item: FlowStep) -> StepRow.State {
-        if item == step { return .current }
-        if item.rawValue < step.rawValue { return .done }
-        return .todo
-    }
-}
-
-private struct StepRow: View {
-    enum State { case todo, current, done }
-
-    let index: Int
-    let title: String
-    let state: State
-    let action: () -> Void
-
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    @FocusState private var focused: Bool
-
-    var body: some View {
-        Button(action: action) {
-            HStack(spacing: HSTheme.Space.sm) {
-                ZStack {
-                    Circle()
-                        .fill(badgeFill)
-                        .frame(width: 22, height: 22)
-                    if state == .done {
-                        Image(systemName: "checkmark")
-                            .font(.system(size: 10, weight: .bold))
-                            .foregroundStyle(HSTheme.accentOn)
-                    } else {
-                        Text("\(index)")
-                            .font(.system(size: 11, weight: .semibold))
-                            .foregroundStyle(badgeInk)
-                    }
-                }
-                Text(title)
-                    .font(state == .current ? HSTypography.headline : HSTypography.callout)
-                    .foregroundStyle(state == .todo ? HSTheme.inkSecondary : HSTheme.ink)
-                Spacer(minLength: 0)
-            }
-            .padding(.horizontal, HSTheme.Space.sm)
-            .padding(.vertical, HSTheme.Space.sm)
-            .background(
-                RoundedRectangle(cornerRadius: HSTheme.Radius.md, style: .continuous)
-                    .fill(state == .current ? HSTheme.accentSoft : Color.clear)
-            )
-            .overlay {
-                RoundedRectangle(cornerRadius: HSTheme.Radius.md, style: .continuous)
-                    .strokeBorder(focused ? HSTheme.focusRing : Color.clear, lineWidth: 2)
-            }
-        }
-        .buttonStyle(.plain)
-        .focused($focused)
-        .accessibilityLabel("\(title)\(state == .current ? ", current step" : state == .done ? ", completed" : "")")
-        .animation(.hsControl(reduceMotion: reduceMotion), value: state)
-    }
-
-    private var badgeFill: Color {
-        switch state {
-        case .current: return HSTheme.accent
-        case .done: return HSTheme.success
-        case .todo: return HSTheme.border
-        }
-    }
-
-    private var badgeInk: Color {
-        switch state {
-        case .current: return HSTheme.accentOn
-        case .done: return HSTheme.accentOn
-        case .todo: return HSTheme.inkSecondary
-        }
-    }
-}
-
-private struct PrivacyNote: View {
-    var body: some View {
-        HStack(alignment: .top, spacing: HSTheme.Space.sm) {
-            Image(systemName: "lock.fill")
-                .font(.system(size: 11, weight: .semibold))
-                .foregroundStyle(HSTheme.inkSecondary)
-                .padding(.top, 2)
-            VStack(alignment: .leading, spacing: 2) {
-                Text("Private by design")
-                    .font(HSTypography.label)
-                    .foregroundStyle(HSTheme.ink)
-                Text("Photos never leave your Mac.")
-                    .font(HSTypography.caption)
-                    .foregroundStyle(HSTheme.inkSecondary)
-            }
-        }
-        .padding(HSTheme.Space.md)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(
-            RoundedRectangle(cornerRadius: HSTheme.Radius.md, style: .continuous)
-                .fill(HSTheme.surface)
-                .overlay(
-                    RoundedRectangle(cornerRadius: HSTheme.Radius.md, style: .continuous)
-                        .strokeBorder(HSTheme.border, lineWidth: 1)
-                )
-        )
-        .accessibilityElement(children: .combine)
-    }
-}
-
-// MARK: - Welcome
-
-private struct WelcomePane: View {
-    @Binding var folder: URL?
-    @Binding var targeted: Bool
-    @Binding var dropMessage: String?
-    let disabled: Bool
-    let onApply: ([URL]) -> Void
-
-    var body: some View {
-        VStack(spacing: HSTheme.Space.lg) {
-            DropZone(
-                folder: $folder,
-                targeted: $targeted,
-                dropMessage: $dropMessage,
-                disabled: disabled,
-                onApply: onApply
-            )
-            .frame(minHeight: 320)
-
-            HStack(spacing: 6) {
-                Image(systemName: "lock.fill")
-                    .font(.system(size: 11))
-                Text("Everything stays on your Mac. Nothing is uploaded.")
-                    .font(HSTypography.caption)
-            }
-            .foregroundStyle(HSTheme.inkSecondary)
-            .frame(maxWidth: .infinity)
-            .accessibilityElement(children: .combine)
-        }
-    }
-}
-
-private struct DropZone: View {
-    @Binding var folder: URL?
-    @Binding var targeted: Bool
-    @Binding var dropMessage: String?
-    let disabled: Bool
-    let onApply: ([URL]) -> Void
-
-    @FocusState private var focused: Bool
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
-
-    var body: some View {
-        RoundedRectangle(cornerRadius: HSTheme.Radius.lg, style: .continuous)
-            .strokeBorder(
-                targeted || focused ? HSTheme.accent : HSTheme.borderStrong,
-                style: StrokeStyle(lineWidth: 2, dash: folder == nil ? [8, 6] : [])
-            )
-            .background(
-                RoundedRectangle(cornerRadius: HSTheme.Radius.lg, style: .continuous)
-                    .fill(targeted ? HSTheme.dropTarget : HSTheme.surfaceMuted)
-            )
-            .overlay { content }
-            .contentShape(RoundedRectangle(cornerRadius: HSTheme.Radius.lg, style: .continuous))
-            .modifier(FolderDropTarget(
-                enabled: !disabled,
-                targeted: $targeted,
-                onApply: onApply
-            ))
-            .onTapGesture { chooseFolder() }
-            .focusable(!disabled)
-            .focused($focused)
-            .accessibilityElement(children: .combine)
-            .accessibilityLabel(folder == nil
-                ? "Drop photos or a folder here"
-                : "Selected folder \(folder!.lastPathComponent). Click to choose another.")
-            .accessibilityAddTraits(.isButton)
-            .accessibilityHint("Drop a folder or photos such as JPG, or click to choose")
-            .animation(.hsControl(reduceMotion: reduceMotion), value: targeted)
-    }
-
-    @ViewBuilder
-    private var content: some View {
-        VStack(spacing: HSTheme.Space.md) {
-            ZStack {
-                PortraitStack()
-                Circle()
-                    .fill(HSTheme.accent)
-                    .frame(width: 44, height: 44)
-                    .overlay {
-                        Image(systemName: "arrow.down")
-                            .font(.system(size: 16, weight: .semibold))
-                            .foregroundStyle(HSTheme.accentOn)
-                    }
-                    .offset(y: 36)
-                    .accessibilityHidden(true)
-            }
-            .frame(height: 110)
-            .padding(.bottom, HSTheme.Space.sm)
-
-            if let folder {
-                Text(folder.lastPathComponent)
-                    .font(HSTypography.title)
-                    .foregroundStyle(HSTheme.ink)
-                Text(folder.deletingLastPathComponent().path)
-                    .font(HSTypography.callout)
-                    .foregroundStyle(HSTheme.inkSecondary)
-                    .lineLimit(1)
-                    .truncationMode(.middle)
-            } else {
-                Text("Drop photos or a folder here")
-                    .font(HSTypography.title)
-                    .foregroundStyle(HSTheme.ink)
-                Text("We’ll turn them into clean, matching headshots.")
-                    .font(HSTypography.callout)
-                    .foregroundStyle(HSTheme.inkSecondary)
-            }
-
-            HStack(spacing: HSTheme.Space.sm) {
-                Button {
-                    choosePhotos()
-                } label: {
-                    Label("Choose Photos", systemImage: "photo.on.rectangle")
-                        .frame(minWidth: 140)
-                }
-                .buttonStyle(HSPrimaryButtonStyle())
-                .disabled(disabled)
-
-                Button {
-                    chooseFolder()
-                } label: {
-                    Label("Choose a Folder", systemImage: "folder")
-                        .frame(minWidth: 140)
-                }
-                .buttonStyle(HSSecondaryButtonStyle())
-                .disabled(disabled)
-            }
-            .padding(.top, HSTheme.Space.xs)
-        }
-        .padding(HSTheme.Space.xl)
-    }
-
-    private func chooseFolder() {
-        guard !disabled else { return }
-        let panel = NSOpenPanel()
-        panel.canChooseDirectories = true
-        panel.canChooseFiles = false
-        panel.allowsMultipleSelection = false
-        panel.prompt = "Choose"
-        if panel.runModal() == .OK, let url = panel.url {
-            onApply([url])
-        }
-    }
-
-    private func choosePhotos() {
-        guard !disabled else { return }
+    private func chooseDifferentFolder() {
+        gallerySelection = nil
+        galleryFilter = .all
+        dropMessage = nil
+        runner.resetResults()
+        folder = nil
         let panel = NSOpenPanel()
         panel.canChooseDirectories = true
         panel.canChooseFiles = true
@@ -512,28 +166,7 @@ private struct DropZone: View {
         panel.allowedContentTypes = [.folder, .jpeg, .png, .heic, .tiff, .image]
         panel.prompt = "Choose"
         if panel.runModal() == .OK {
-            onApply(panel.urls)
-        }
-    }
-}
-
-/// Shared drop wiring: accepts file URLs and image UTTypes, loads every provider.
-private struct FolderDropTarget: ViewModifier {
-    let enabled: Bool
-    @Binding var targeted: Bool
-    let onApply: ([URL]) -> Void
-
-    func body(content: Content) -> some View {
-        content.onDrop(of: DropIntake.acceptedTypes, isTargeted: Binding(
-            get: { targeted },
-            set: { targeted = enabled ? $0 : false }
-        )) { providers in
-            guard enabled, !providers.isEmpty else { return false }
-            Task { @MainActor in
-                let urls = await DropReaders.loadURLs(from: providers)
-                onApply(urls)
-            }
-            return true
+            applyDrop(urls: panel.urls)
         }
     }
 }
@@ -546,13 +179,15 @@ private struct DropMessageBanner: View {
         HStack(alignment: .top, spacing: HSTheme.Space.md) {
             Image(systemName: "exclamationmark.circle.fill")
                 .foregroundStyle(HSTheme.warning)
+                .accessibilityHidden(true)
             Text(message)
                 .font(HSTypography.callout)
                 .foregroundStyle(HSTheme.ink)
                 .textSelection(.enabled)
+                .fixedSize(horizontal: false, vertical: true)
             Spacer(minLength: 0)
             Button("Dismiss", action: onDismiss)
-                .buttonStyle(HSSecondaryButtonStyle())
+                .buttonStyle(.bordered)
         }
         .padding(HSTheme.Space.md)
         .background(
@@ -568,668 +203,544 @@ private struct DropMessageBanner: View {
     }
 }
 
-private struct PortraitStack: View {
+// MARK: - Flow chrome
+
+private struct FlowStepper: View {
+    let phase: FlowPhase
+
+    var body: some View {
+        HStack(spacing: 0) {
+            ForEach(FlowPhase.allCases, id: \.self) { step in
+                HStack(spacing: 6) {
+                    Circle()
+                        .fill(step.rawValue <= phase.rawValue ? Color.accentColor : Color.secondary.opacity(0.25))
+                        .frame(width: 7, height: 7)
+                    Text(step.title)
+                        .font(.subheadline.weight(step == phase ? .semibold : .regular))
+                        .foregroundStyle(step == phase ? .primary : .secondary)
+                }
+                .accessibilityLabel("\(step.title)\(step == phase ? ", current step" : "")")
+                if step != .gallery {
+                    Rectangle()
+                        .fill(Color.secondary.opacity(0.25))
+                        .frame(height: 1)
+                        .frame(maxWidth: 28)
+                        .padding(.horizontal, 8)
+                        .accessibilityHidden(true)
+                }
+            }
+            Spacer(minLength: 0)
+        }
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel("Workflow: Select, Polish, Gallery. Current step \(phase.title)")
+    }
+}
+
+private struct FolderChip: View {
+    let folder: URL?
+
+    var body: some View {
+        HStack(spacing: 8) {
+            Image(systemName: "folder.fill")
+                .foregroundStyle(.secondary)
+            if let folder {
+                Text(folder.lastPathComponent)
+                    .font(.subheadline.weight(.medium))
+                    .lineLimit(1)
+                Text(folder.deletingLastPathComponent().path)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+            } else {
+                Text("No folder selected")
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+            }
+            Spacer(minLength: 0)
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 8)
+        .background(
+            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                .fill(.ultraThinMaterial)
+        )
+    }
+}
+
+private struct WindowBackdrop: View {
     var body: some View {
         ZStack {
-            card(offset: -28, rotation: -8, color: HSTheme.accentSoft)
-            card(offset: 0, rotation: 0, color: HSTheme.surface)
-            card(offset: 28, rotation: 8, color: HSTheme.successSoft)
-        }
-        .accessibilityHidden(true)
-    }
-
-    private func card(offset: CGFloat, rotation: Double, color: Color) -> some View {
-        RoundedRectangle(cornerRadius: HSTheme.Radius.md, style: .continuous)
-            .fill(color)
-            .frame(width: 64, height: 80)
-            .overlay(
-                RoundedRectangle(cornerRadius: HSTheme.Radius.md, style: .continuous)
-                    .strokeBorder(HSTheme.border, lineWidth: 1)
+            Color(nsColor: .windowBackgroundColor)
+            LinearGradient(
+                colors: [
+                    Color.primary.opacity(0.03),
+                    Color.clear,
+                    Color.primary.opacity(0.02),
+                ],
+                startPoint: .top,
+                endPoint: .bottom
             )
-            .overlay {
-                Image(systemName: "person.fill")
-                    .foregroundStyle(HSTheme.inkSecondary)
-            }
-            .rotationEffect(.degrees(rotation))
-            .offset(x: offset)
+        }
+        .ignoresSafeArea()
     }
 }
 
-// MARK: - Check
+// MARK: - Home / drop
 
-private struct CheckPane: View {
-    let folder: URL?
-    let photoCount: Int
+private struct DropZone: View {
+    @Binding var folder: URL?
     @Binding var targeted: Bool
-    let dropsEnabled: Bool
+    let disabled: Bool
     let onApply: ([URL]) -> Void
-    let onChangeFolder: () -> Void
-    let onContinue: () -> Void
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: HSTheme.Space.lg) {
-            if photoCount == 0 {
-                EmptyStateCard(
-                    systemImage: "photo.on.rectangle.angled",
-                    title: "No photos in this folder",
-                    detail: "Drop a folder or photos (JPG, JPEG, PNG, HEIC) here. Subfolders are ignored.",
-                    actionTitle: "Choose another folder",
-                    action: onChangeFolder
-                )
-            } else {
-                VStack(alignment: .leading, spacing: HSTheme.Space.sm) {
-                    Text("Ready to polish")
-                        .font(HSTypography.title)
-                        .foregroundStyle(HSTheme.ink)
-                    Text(folder.map(\.lastPathComponent) ?? "Folder")
-                        .font(HSTypography.headline)
-                        .foregroundStyle(HSTheme.ink)
-                    Text("\(photoCount) photo\(photoCount == 1 ? "" : "s") at the top level. Originals stay untouched.")
-                        .font(HSTypography.callout)
-                        .foregroundStyle(HSTheme.inkSecondary)
-                    Text("Drop another folder or photos to switch.")
-                        .font(HSTypography.caption)
-                        .foregroundStyle(HSTheme.inkSecondary)
-                }
-
-                HStack(spacing: HSTheme.Space.sm) {
-                    Button("Choose another folder", action: onChangeFolder)
-                        .buttonStyle(HSSecondaryButtonStyle())
-                    Button("Continue to Finish", action: onContinue)
-                        .buttonStyle(HSPrimaryButtonStyle())
-                        .keyboardShortcut(.defaultAction)
-                }
-            }
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(targeted ? HSTheme.Space.md : 0)
-        .background(
-            RoundedRectangle(cornerRadius: HSTheme.Radius.lg, style: .continuous)
-                .fill(targeted ? HSTheme.dropTarget : Color.clear)
-        )
-        .modifier(FolderDropTarget(enabled: dropsEnabled, targeted: $targeted, onApply: onApply))
-    }
-}
-
-// MARK: - Finish / options
-
-private struct FinishPane: View {
-    @Binding var options: Options
-    let folder: URL?
-    @Binding var targeted: Bool
-    let dropsEnabled: Bool
-    let onApply: ([URL]) -> Void
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: HSTheme.Space.xl) {
-            if let folder {
-                Text("Folder: \(folder.lastPathComponent)")
-                    .font(HSTypography.caption)
-                    .foregroundStyle(HSTheme.inkSecondary)
-            }
-            VStack(spacing: HSTheme.Space.sm) {
-                Text("How should we finish them?")
-                    .font(HSTypography.title)
-                    .foregroundStyle(HSTheme.ink)
-                    .frame(maxWidth: .infinity)
-                HStack(spacing: 6) {
-                    Image(systemName: "sparkles")
-                    Text("These are our recommended settings. Just press Make Headshots.")
-                        .font(HSTypography.caption)
-                }
-                .foregroundStyle(HSTheme.success)
-                .padding(.horizontal, HSTheme.Space.md)
-                .padding(.vertical, HSTheme.Space.sm)
-                .background(
-                    Capsule().fill(HSTheme.successSoft)
-                )
-                .frame(maxWidth: .infinity)
-                .accessibilityElement(children: .combine)
-            }
-
-            OptionSection(title: "Framing") {
-                HStack(spacing: HSTheme.Space.sm) {
-                    ForEach(Options.Framing.allCases) { framing in
-                        FramingCard(
-                            framing: framing,
-                            selected: options.framing == framing,
-                            recommended: framing == .headShoulders
-                        ) {
-                            options.framing = framing
-                        }
-                    }
-                }
-            }
-
-            HStack(alignment: .top, spacing: HSTheme.Space.lg) {
-                OptionSection(title: "Color") {
-                    VStack(spacing: HSTheme.Space.sm) {
-                        ChoiceRow(
-                            title: "Color",
-                            selected: !options.blackAndWhite,
-                            swatch: HSTheme.accent
-                        ) { options.blackAndWhite = false }
-                        ChoiceRow(
-                            title: "Black & White",
-                            selected: options.blackAndWhite,
-                            swatch: HSTheme.inkSecondary
-                        ) { options.blackAndWhite = true }
-                    }
-                }
-                OptionSection(title: "Background") {
-                    VStack(spacing: HSTheme.Space.sm) {
-                        ChoiceRow(
-                            title: "Soft studio",
-                            selected: options.softStudio,
-                            swatch: HSTheme.surfaceMuted
-                        ) { options.softStudio = true }
-                        ChoiceRow(
-                            title: "Keep original",
-                            selected: !options.softStudio,
-                            swatch: HSTheme.warning
-                        ) { options.softStudio = false }
-                    }
-                }
-            }
-
-            GroupToggle(isOn: $options.groupByPerson)
-        }
-        .padding(targeted ? HSTheme.Space.sm : 0)
-        .background(
-            RoundedRectangle(cornerRadius: HSTheme.Radius.lg, style: .continuous)
-                .fill(targeted ? HSTheme.dropTarget : Color.clear)
-        )
-        .modifier(FolderDropTarget(enabled: dropsEnabled, targeted: $targeted, onApply: onApply))
-    }
-}
-
-private struct OptionSection<Content: View>: View {
-    let title: String
-    @ViewBuilder let content: Content
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: HSTheme.Space.sm) {
-            Text(title.uppercased())
-                .font(HSTypography.label)
-                .foregroundStyle(HSTheme.inkSecondary)
-                .tracking(0.6)
-            content
-        }
-    }
-}
-
-private struct FramingCard: View {
-    let framing: Options.Framing
-    let selected: Bool
-    let recommended: Bool
-    let action: () -> Void
-
-    @FocusState private var focused: Bool
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
-        Button(action: action) {
-            VStack(alignment: .leading, spacing: HSTheme.Space.sm) {
-                ZStack(alignment: .topLeading) {
-                    RoundedRectangle(cornerRadius: HSTheme.Radius.md, style: .continuous)
-                        .fill(HSTheme.surfaceMuted)
-                        .frame(height: 88)
-                        .overlay {
-                            Image(systemName: framing.symbol)
-                                .font(.system(size: 28, weight: .regular))
-                                .foregroundStyle(HSTheme.inkSecondary)
-                        }
-                    if recommended {
-                        Text("Recommended")
-                            .font(.system(size: 10, weight: .semibold))
-                            .foregroundStyle(HSTheme.accent)
-                            .padding(.horizontal, 8)
-                            .padding(.vertical, 4)
-                            .background(Capsule().fill(HSTheme.surface))
-                            .padding(HSTheme.Space.sm)
-                    }
-                    if selected {
-                        Image(systemName: "checkmark.circle.fill")
-                            .foregroundStyle(HSTheme.accent)
-                            .background(Circle().fill(HSTheme.surface).padding(2))
-                            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing)
-                            .padding(HSTheme.Space.sm)
-                    }
-                }
-                Text(framing.title)
-                    .font(HSTypography.headline)
-                    .foregroundStyle(HSTheme.ink)
-                Text(framing.detail)
-                    .font(HSTypography.caption)
-                    .foregroundStyle(HSTheme.inkSecondary)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-            .padding(HSTheme.Space.md)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .background(
+        let active = targeted && !disabled
+        let hasFolder = folder != nil
+
+        Button(action: choose) {
+            ZStack {
                 RoundedRectangle(cornerRadius: HSTheme.Radius.lg, style: .continuous)
-                    .fill(HSTheme.surface)
-            )
-            .overlay(
+                    .fill(HSTheme.surfaceMuted)
                 RoundedRectangle(cornerRadius: HSTheme.Radius.lg, style: .continuous)
-                    .strokeBorder(selected || focused ? HSTheme.accent : HSTheme.border, lineWidth: selected || focused ? 2 : 1)
-            )
-        }
-        .buttonStyle(.plain)
-        .focused($focused)
-        .accessibilityLabel("\(framing.title). \(framing.detail)\(recommended ? ". Recommended" : "")")
-        .accessibilityAddTraits(selected ? .isSelected : [])
-        .animation(.hsControl(reduceMotion: reduceMotion), value: selected)
-    }
-}
-
-private struct ChoiceRow: View {
-    let title: String
-    let selected: Bool
-    let swatch: Color
-    let action: () -> Void
-
-    @FocusState private var focused: Bool
-
-    var body: some View {
-        Button(action: action) {
-            HStack(spacing: HSTheme.Space.md) {
-                RoundedRectangle(cornerRadius: 4, style: .continuous)
-                    .fill(swatch)
-                    .frame(width: 28, height: 28)
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 4, style: .continuous)
-                            .strokeBorder(HSTheme.border, lineWidth: 1)
+                    .fill(active ? HSTheme.dropTarget : (hasFolder ? HSTheme.accentSoft : HSTheme.surfaceMuted))
+                RoundedRectangle(cornerRadius: HSTheme.Radius.lg, style: .continuous)
+                    .strokeBorder(
+                        active || hasFolder ? HSTheme.accent : HSTheme.borderStrong,
+                        style: StrokeStyle(
+                            lineWidth: active || hasFolder ? 1.5 : 1.25,
+                            dash: hasFolder || active ? [] : [6, 5]
+                        )
                     )
-                Text(title)
-                    .font(HSTypography.headline)
-                    .foregroundStyle(HSTheme.ink)
-                Spacer(minLength: 0)
-                Image(systemName: selected ? "checkmark.circle.fill" : "circle")
-                    .foregroundStyle(selected ? HSTheme.accent : HSTheme.borderStrong)
+
+                VStack(spacing: 10) {
+                    Image(systemName: hasFolder ? "folder.fill" : "person.crop.rectangle.stack")
+                        .font(.system(size: 28, weight: .medium))
+                        .foregroundStyle(active ? HSTheme.accent : HSTheme.inkSecondary)
+                        .symbolRenderingMode(.hierarchical)
+                        .accessibilityHidden(true)
+
+                    if let folder {
+                        Text(folder.lastPathComponent)
+                            .font(.title3.weight(.semibold))
+                            .foregroundStyle(HSTheme.ink)
+                            .lineLimit(1)
+                        Text(folder.deletingLastPathComponent().path)
+                            .font(.caption)
+                            .foregroundStyle(HSTheme.inkSecondary)
+                            .lineLimit(1)
+                            .truncationMode(.middle)
+                    } else {
+                        Text("Drop photos or a folder here")
+                            .font(.title3.weight(.semibold))
+                            .foregroundStyle(HSTheme.ink)
+                        Text("Select → Polish → Gallery. Originals stay untouched.")
+                            .font(.callout)
+                            .foregroundStyle(HSTheme.inkSecondary)
+                            .multilineTextAlignment(.center)
+                            .frame(maxWidth: 420)
+                    }
+                }
+                .padding(.horizontal, HSTheme.Space.xl)
+                .padding(.vertical, 22)
             }
-            .padding(HSTheme.Space.md)
-            .background(
-                RoundedRectangle(cornerRadius: HSTheme.Radius.md, style: .continuous)
-                    .fill(HSTheme.surface)
-            )
-            .overlay(
-                RoundedRectangle(cornerRadius: HSTheme.Radius.md, style: .continuous)
-                    .strokeBorder(selected || focused ? HSTheme.accent : HSTheme.border, lineWidth: selected || focused ? 2 : 1)
-            )
+            .frame(minHeight: hasFolder ? 110 : 148)
+            .scaleEffect(reduceMotion ? 1 : (active ? 1.01 : 1))
+            .animation(.hsControl(reduceMotion: reduceMotion), value: active)
         }
         .buttonStyle(.plain)
-        .focused($focused)
-        .accessibilityLabel(title)
-        .accessibilityAddTraits(selected ? .isSelected : [])
+        .disabled(disabled)
+        .onDrop(of: DropIntake.acceptedTypes, isTargeted: Binding(
+            get: { targeted },
+            set: { targeted = disabled ? false : $0 }
+        )) { providers in
+            guard !disabled, !providers.isEmpty else { return false }
+            Task { @MainActor in
+                let urls = await DropReaders.loadURLs(from: providers)
+                onApply(urls)
+            }
+            return true
+        }
+        .help(hasFolder
+              ? "Click to choose a different folder or photos"
+              : "Drop a folder or photos (JPG, JPEG, PNG, HEIC), or click to choose")
+        .accessibilityAddTraits(.isButton)
+    }
+
+    private func choose() {
+        guard !disabled else { return }
+        let panel = NSOpenPanel()
+        panel.canChooseDirectories = true
+        panel.canChooseFiles = true
+        panel.allowsMultipleSelection = true
+        panel.allowedContentTypes = [.folder, .jpeg, .png, .heic, .tiff, .image]
+        panel.prompt = "Choose"
+        if panel.runModal() == .OK {
+            onApply(panel.urls)
+        }
     }
 }
 
-private struct GroupToggle: View {
-    @Binding var isOn: Bool
+// MARK: - Settings / options
+
+private struct SettingsPanel: View {
+    @Binding var options: Options
+
+    private var height: Int {
+        let parts = options.shape.rawValue.split(separator: ":").compactMap { Double($0) }
+        guard parts.count == 2, parts[1] != 0 else { return options.width }
+        return Int((Double(options.width) * parts[1] / parts[0]).rounded())
+    }
 
     var body: some View {
-        HStack(spacing: HSTheme.Space.md) {
-            RoundedRectangle(cornerRadius: HSTheme.Radius.sm, style: .continuous)
-                .fill(HSTheme.warning)
-                .frame(width: 36, height: 36)
-                .overlay {
-                    Image(systemName: "person.2.fill")
-                        .foregroundStyle(HSTheme.accentOn)
-                        .font(.system(size: 14, weight: .semibold))
+        VStack(alignment: .leading, spacing: HSTheme.Space.md) {
+            sectionHeader("Frame", systemImage: "aspectratio")
+            GroupBox {
+                VStack(alignment: .leading, spacing: 14) {
+                    labeledRow("Shape") {
+                        Picker("Shape", selection: $options.shape) {
+                            ForEach(Options.Shape.allCases) { Text($0.label).tag($0) }
+                        }
+                        .labelsHidden()
+                        .frame(maxWidth: 280, alignment: .leading)
+                        .accessibilityLabel("Crop shape")
+                    }
+
+                    labeledRow("Width") {
+                        HStack(spacing: 10) {
+                            TextField("Width", value: $options.width, format: .number)
+                                .frame(width: 72)
+                                .accessibilityLabel("Output width in pixels")
+                            Text("px · \(options.width) × \(height)")
+                                .font(.callout)
+                                .foregroundStyle(HSTheme.inkSecondary)
+                                .accessibilityLabel("Output size \(options.width) by \(height) pixels")
+                        }
+                    }
+
+                    labeledRow("Framing") {
+                        Picker("Framing", selection: $options.framing) {
+                            ForEach(Options.Framing.allCases) { framing in
+                                Text("\(framing.title) — \(framing.detail)").tag(framing)
+                            }
+                        }
+                        .labelsHidden()
+                        .frame(maxWidth: 320, alignment: .leading)
+                        .accessibilityLabel("Framing preset")
+                        .accessibilityValue(options.framing.title)
+                    }
                 }
-                .accessibilityHidden(true)
-            VStack(alignment: .leading, spacing: 2) {
-                Text("Group by person")
-                    .font(HSTypography.headline)
-                    .foregroundStyle(HSTheme.ink)
-                Text(isOn
-                     ? "Puts photos of the same person together. Downloads a 37 MB model the first time."
-                     : "Puts photos of the same person together.")
-                    .font(HSTypography.caption)
-                    .foregroundStyle(HSTheme.inkSecondary)
+                .padding(4)
+            }
+
+            sectionHeader("Finish", systemImage: "camera.filters")
+            GroupBox {
+                VStack(alignment: .leading, spacing: 10) {
+                    Toggle("Black and white", isOn: $options.blackAndWhite)
+                    Toggle("Soft studio finish", isOn: $options.softStudio)
+                        .help("Tone and colour work. Off keeps the original look after crop.")
+                    Toggle("Group by person afterwards", isOn: $options.groupByPerson)
+                    if options.groupByPerson {
+                        Label(
+                            "Downloads a 37 MB matching model the first time — then works offline.",
+                            systemImage: "arrow.down.circle"
+                        )
+                        .font(.caption)
+                        .foregroundStyle(HSTheme.inkSecondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .accessibilityLabel(
+                            "Group by person downloads a 37 megabyte matching model the first time, then works offline."
+                        )
+                    }
+                }
+                .padding(4)
+                .frame(maxWidth: .infinity, alignment: .leading)
+            }
+        }
+    }
+
+    private func sectionHeader(_ title: String, systemImage: String) -> some View {
+        Label(title, systemImage: systemImage)
+            .font(.subheadline.weight(.semibold))
+            .foregroundStyle(.secondary)
+            .labelStyle(.titleAndIcon)
+    }
+
+    private func labeledRow<Content: View>(_ title: String, @ViewBuilder content: () -> Content) -> some View {
+        HStack(alignment: .firstTextBaseline, spacing: 14) {
+            Text(title)
+                .foregroundStyle(.secondary)
+                .frame(width: 56, alignment: .trailing)
+            content()
+            Spacer(minLength: 0)
+        }
+    }
+}
+
+// MARK: - Progress (secondary to gallery)
+
+private struct ProgressStrip: View {
+    @ObservedObject var runner: Runner
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack {
+                Text(runner.total > 0
+                     ? "\(runner.done) of \(runner.total)"
+                     : "Reading the folder…")
+                    .font(.subheadline.weight(.medium))
+                Spacer()
+                if runner.total > 0 {
+                    Text("\(percent)%")
+                        .font(.caption.monospacedDigit())
+                        .foregroundStyle(.secondary)
+                }
+            }
+            ProgressView(value: Double(runner.done), total: Double(max(runner.total, 1)))
+                .accessibilityLabel("Polishing progress")
+                .accessibilityValue(runner.total > 0
+                    ? "\(runner.done) of \(runner.total)"
+                    : "Reading the folder")
+        }
+        .padding(12)
+        .background(
+            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                .fill(.ultraThinMaterial)
+        )
+    }
+
+    private var percent: Int {
+        guard runner.total > 0 else { return 0 }
+        return Int((Double(runner.done) / Double(runner.total) * 100).rounded())
+    }
+}
+
+private struct ResultSummary: View {
+    let polished: Event.Polished
+    let grouped: Event.Grouped?
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text("\(polished.processed) polished, \(polished.unchanged) unchanged")
+                .font(.headline)
+                .fixedSize(horizontal: false, vertical: true)
+
+            HStack(spacing: 8) {
+                ForEach(["PASS", "REVIEW", "FAIL", "SKIPPED"], id: \.self) { grade in
+                    if let count = polished.counts[grade], count > 0 {
+                        GradeChip(grade: grade, count: count)
+                    }
+                }
+            }
+
+            if let note = polished.setNote {
+                Label(note, systemImage: "lightbulb")
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
             }
-            Spacer(minLength: 0)
-            Toggle("Group by person", isOn: $isOn)
-                .labelsHidden()
-                .tint(HSTheme.success)
-        }
-        .padding(HSTheme.Space.md)
-        .background(
-            RoundedRectangle(cornerRadius: HSTheme.Radius.md, style: .continuous)
-                .fill(HSTheme.surface)
-                .overlay(
-                    RoundedRectangle(cornerRadius: HSTheme.Radius.md, style: .continuous)
-                        .strokeBorder(HSTheme.border, lineWidth: 1)
-                )
-        )
-        .accessibilityElement(children: .combine)
-    }
-}
 
-// MARK: - Processing
-
-private struct ProcessingPane: View {
-    @ObservedObject var runner: Runner
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: HSTheme.Space.lg) {
-            Text("Making headshots…")
-                .font(HSTypography.title)
-                .foregroundStyle(HSTheme.ink)
-            Text(runner.total > 0
-                 ? "\(runner.done) of \(runner.total) — tiles fill in as each one finishes."
-                 : "Reading the folder…")
-                .font(HSTypography.callout)
-                .foregroundStyle(HSTheme.inkSecondary)
-                .accessibilityLabel(runner.total > 0
-                    ? "Processing \(runner.done) of \(runner.total)"
-                    : "Reading the folder")
-
-            ProgressView(value: Double(runner.done), total: Double(max(runner.total, 1)))
-                .tint(HSTheme.accent)
-
-            // Reserved list height so the layout does not jump when the first photo arrives.
-            PhotoGradeList(photos: runner.photos)
-                .frame(minHeight: 180)
-        }
-    }
-}
-
-// MARK: - Results
-
-private struct ResultsPane: View {
-    @ObservedObject var runner: Runner
-    let folder: URL?
-    @Binding var targeted: Bool
-    let dropsEnabled: Bool
-    let onApply: ([URL]) -> Void
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: HSTheme.Space.lg) {
-            HStack(alignment: .top, spacing: HSTheme.Space.md) {
-                Image(systemName: "checkmark.circle.fill")
-                    .font(.system(size: 28))
-                    .foregroundStyle(HSTheme.success)
-                    .accessibilityHidden(true)
-                VStack(alignment: .leading, spacing: HSTheme.Space.xs) {
-                    Text("Your headshots are ready")
-                        .font(HSTypography.title)
-                        .foregroundStyle(HSTheme.ink)
-                    if let polished = runner.polished {
-                        Text(summary(polished))
-                            .font(HSTypography.callout)
-                            .foregroundStyle(HSTheme.inkSecondary)
-                    }
-                    if let grouped = runner.grouped {
-                        Text("\(grouped.students) people across \(grouped.photos) photos — \(grouped.why)")
-                            .font(HSTypography.caption)
-                            .foregroundStyle(HSTheme.inkSecondary)
-                    }
-                    Text("Drop a folder or photos to start another set.")
-                        .font(HSTypography.caption)
-                        .foregroundStyle(HSTheme.inkSecondary)
+            if let grouped {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("\(grouped.students) people across \(grouped.photos) photos")
+                        .font(.subheadline.weight(.semibold))
+                    Text("Grouped at \(grouped.threshold, specifier: "%.2f") — \(grouped.why)")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
                 }
-            }
-            .accessibilityElement(children: .combine)
-
-            if runner.photos.isEmpty {
-                EmptyStateCard(
-                    systemImage: "photo.on.rectangle.angled",
-                    title: "No tiles to show here",
-                    detail: "The run finished, but nothing landed in the list. Open the polished folder in Finder.",
-                    actionTitle: nil,
-                    action: nil
-                )
-            } else {
-                PhotoGradeList(photos: runner.photos)
-                    .frame(minHeight: 200)
-            }
-
-            if let note = runner.polished?.setNote {
-                Label(note, systemImage: "lightbulb")
-                    .font(HSTypography.callout)
-                    .foregroundStyle(HSTheme.inkSecondary)
+                .padding(.top, 2)
             }
         }
-        .padding(targeted ? HSTheme.Space.sm : 0)
+        .padding(12)
+        .frame(maxWidth: .infinity, alignment: .leading)
         .background(
-            RoundedRectangle(cornerRadius: HSTheme.Radius.lg, style: .continuous)
-                .fill(targeted ? HSTheme.dropTarget : Color.clear)
+            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                .fill(.ultraThinMaterial)
         )
-        .modifier(FolderDropTarget(enabled: dropsEnabled, targeted: $targeted, onApply: onApply))
-    }
-
-    private func summary(_ p: Event.Polished) -> String {
-        let parts = ["PASS", "REVIEW", "FAIL", "SKIPPED"]
-            .compactMap { g in (p.counts[g] ?? 0) > 0 ? "\(p.counts[g]!) \(g.lowercased())" : nil }
-        var line = "\(p.processed) polished, \(p.unchanged) unchanged"
-        if !parts.isEmpty { line += " — " + parts.joined(separator: ", ") }
-        return line
     }
 }
 
-private struct PhotoGradeList: View {
-    let photos: [Event.Photo]
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            ForEach(photos.suffix(40).reversed()) { photo in
-                HStack(alignment: .firstTextBaseline, spacing: HSTheme.Space.sm) {
-                    Circle()
-                        .fill(gradeColor(photo.grade))
-                        .frame(width: 8, height: 8)
-                        .accessibilityHidden(true)
-                    Text(photo.grade)
-                        .font(HSTypography.label)
-                        .foregroundStyle(gradeColor(photo.grade))
-                        .frame(width: 56, alignment: .leading)
-                    Text(photo.source)
-                        .font(.system(.callout, design: .monospaced))
-                        .foregroundStyle(HSTheme.ink)
-                        .lineLimit(1)
-                    Text(photo.why)
-                        .font(HSTypography.caption)
-                        .foregroundStyle(HSTheme.inkSecondary)
-                        .lineLimit(1)
-                    Spacer(minLength: 0)
-                }
-                .padding(.vertical, HSTheme.Space.sm)
-                .accessibilityElement(children: .combine)
-                .accessibilityLabel("\(photo.grade): \(photo.source). \(photo.why)")
-                Divider().background(HSTheme.border)
-            }
-        }
-    }
-
-    private func gradeColor(_ grade: String) -> Color {
-        switch grade {
-        case "PASS": return HSTheme.success
-        case "REVIEW": return HSTheme.warning
-        default: return HSTheme.danger
-        }
-    }
-}
-
-// MARK: - Shared chrome
-
-private struct EmptyStateCard: View {
-    let systemImage: String
-    let title: String
-    let detail: String
-    let actionTitle: String?
-    let action: (() -> Void)?
-
-    var body: some View {
-        VStack(spacing: HSTheme.Space.md) {
-            Image(systemName: systemImage)
-                .font(.system(size: 28, weight: .regular))
-                .foregroundStyle(HSTheme.inkSecondary)
-            Text(title)
-                .font(HSTypography.headline)
-                .foregroundStyle(HSTheme.ink)
-            Text(detail)
-                .font(HSTypography.callout)
-                .foregroundStyle(HSTheme.inkSecondary)
-                .multilineTextAlignment(.center)
-                .frame(maxWidth: 420)
-            if let actionTitle, let action {
-                Button(actionTitle, action: action)
-                    .buttonStyle(HSPrimaryButtonStyle())
-            }
-        }
-        .frame(maxWidth: .infinity)
-        .padding(HSTheme.Space.xl)
-        .background(
-            RoundedRectangle(cornerRadius: HSTheme.Radius.lg, style: .continuous)
-                .strokeBorder(HSTheme.border, style: StrokeStyle(lineWidth: 1, dash: [6, 4]))
-        )
-        .accessibilityElement(children: .contain)
-    }
-}
+// MARK: - Error / offline-ish
 
 private struct ErrorBanner: View {
     let message: String
-    let onDismiss: () -> Void
+    var onDismiss: (() -> Void)?
+
+    private var kind: Kind { Kind(message: message) }
 
     var body: some View {
-        HStack(alignment: .top, spacing: HSTheme.Space.md) {
-            Image(systemName: "exclamationmark.triangle.fill")
-                .foregroundStyle(HSTheme.danger)
+        HStack(alignment: .top, spacing: 12) {
+            Image(systemName: kind.symbol)
+                .font(.title3)
+                .foregroundStyle(kind.tint)
+                .accessibilityHidden(true)
+
             VStack(alignment: .leading, spacing: 4) {
-                Text("Something stopped the run")
-                    .font(HSTypography.headline)
-                    .foregroundStyle(HSTheme.ink)
+                Text(kind.title)
+                    .font(.subheadline.weight(.semibold))
                 Text(message)
-                    .font(HSTypography.callout)
-                    .foregroundStyle(HSTheme.inkSecondary)
+                    .font(.callout)
+                    .foregroundStyle(.primary)
                     .textSelection(.enabled)
+                    .fixedSize(horizontal: false, vertical: true)
+                Text(kind.recovery)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
             }
+
             Spacer(minLength: 0)
-            Button("Dismiss", action: onDismiss)
-                .buttonStyle(HSSecondaryButtonStyle())
+
+            if let onDismiss {
+                Button(action: onDismiss) {
+                    Image(systemName: "xmark.circle.fill")
+                        .foregroundStyle(.secondary)
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("Dismiss error")
+            }
         }
-        .padding(HSTheme.Space.md)
+        .padding(14)
         .background(
-            RoundedRectangle(cornerRadius: HSTheme.Radius.md, style: .continuous)
-                .fill(HSTheme.dangerSoft)
-                .overlay(
-                    RoundedRectangle(cornerRadius: HSTheme.Radius.md, style: .continuous)
-                        .strokeBorder(HSTheme.danger, lineWidth: 1)
-                )
+            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                .fill(kind.tint.opacity(0.10))
         )
-        .accessibilityElement(children: .contain)
-        .accessibilityLabel("Error: \(message)")
+        .overlay(
+            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                .strokeBorder(kind.tint.opacity(0.35), lineWidth: 1)
+        )
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("\(kind.title). \(message). \(kind.recovery)")
+    }
+
+    private enum Kind {
+        case missingCLI
+        case cancelled
+        case failure
+
+        init(message: String) {
+            let lower = message.lowercased()
+            if lower.contains("missing") || lower.contains("command is missing") {
+                self = .missingCLI
+            } else if lower.contains("cancel") || lower.contains("terminated") {
+                self = .cancelled
+            } else {
+                self = .failure
+            }
+        }
+
+        var title: String {
+            switch self {
+            case .missingCLI: return "Command not found"
+            case .cancelled: return "Stopped"
+            case .failure: return "Something went wrong"
+            }
+        }
+
+        var symbol: String {
+            switch self {
+            case .missingCLI: return "terminal"
+            case .cancelled: return "stop.circle"
+            case .failure: return "exclamationmark.triangle.fill"
+            }
+        }
+
+        var tint: Color {
+            switch self {
+            case .missingCLI: return .orange
+            case .cancelled: return .secondary
+            case .failure: return .red
+            }
+        }
+
+        var recovery: String {
+            switch self {
+            case .missingCLI:
+                return "Build the app with `make app`, or install the CLI with `pipx install headshots`."
+            case .cancelled:
+                return "Nothing was written over your originals. Drop the folder again when you are ready."
+            case .failure:
+                return "Check the folder path and try again. Originals were not modified."
+            }
+        }
     }
 }
+
+// MARK: - Primary action bar
 
 private struct ActionBar: View {
-    let step: FlowStep
-    let folder: URL?
-    let photoCount: Int
+    @Binding var folder: URL?
     let options: Options
     @ObservedObject var runner: Runner
-    let onBack: () -> Void
-    let onContinue: () -> Void
+    let phase: FlowPhase
+    let onChooseDifferentFolder: () -> Void
 
     var body: some View {
-        HStack(spacing: HSTheme.Space.sm) {
-            if step != .add {
-                Button("Back", action: onBack)
-                    .buttonStyle(HSSecondaryButtonStyle())
-                    .disabled(runner.running && step == .finish)
-            }
-
-            Spacer(minLength: 0)
-
-            if let polished = runner.polished, step == .save {
-                Button("Show in Finder") {
-                    NSWorkspace.shared.open(URL(fileURLWithPath: polished.out))
-                }
-                .buttonStyle(HSSecondaryButtonStyle())
-                Button("Open contact sheet") {
-                    NSWorkspace.shared.open(URL(fileURLWithPath: polished.sheet))
-                }
-                .buttonStyle(HSSecondaryButtonStyle())
-                if let grouped = runner.grouped, let first = grouped.sheets.first {
-                    Button("Open people sheet") {
-                        NSWorkspace.shared.open(URL(fileURLWithPath: first))
+        HStack(spacing: 10) {
+            if phase == .gallery || phase == .polish {
+                if let out = runner.outDir ?? runner.polished?.out {
+                    Button {
+                        NSWorkspace.shared.open(URL(fileURLWithPath: out))
+                    } label: {
+                        Label("Show in Finder", systemImage: "folder")
                     }
-                    .buttonStyle(HSSecondaryButtonStyle())
+                    .accessibilityLabel("Show polished photos in Finder")
+                    .help("Open the polished output folder")
                 }
-                Button("Polish again") {
+
+                if let sheet = runner.polished?.sheet {
+                    Button {
+                        NSWorkspace.shared.open(URL(fileURLWithPath: sheet))
+                    } label: {
+                        Label("Contact sheet", systemImage: "rectangle.grid.2x2")
+                    }
+                    .accessibilityLabel("Open contact sheet")
+                }
+
+                if let grouped = runner.grouped, let first = grouped.sheets.first {
+                    Button {
+                        NSWorkspace.shared.open(URL(fileURLWithPath: first))
+                    } label: {
+                        Label("People sheet", systemImage: "person.2")
+                    }
+                    .accessibilityLabel("Open people sheet")
+                }
+
+                if phase == .gallery {
+                    Button("Choose folder…", action: onChooseDifferentFolder)
+                        .accessibilityLabel("Choose a different photos folder")
+                }
+            }
+
+            Spacer(minLength: 8)
+
+            if runner.running {
+                Button(role: .cancel) {
+                    runner.cancel()
+                } label: {
+                    Text("Stop")
+                }
+                .keyboardShortcut(.cancelAction)
+                .accessibilityLabel("Stop polishing")
+                .help("Cancel the current run (Esc)")
+            } else {
+                Button {
                     if let folder { runner.run(folder: folder, options: options) }
+                } label: {
+                    Text(phase == .gallery ? "Polish again" : "Polish")
                 }
-                .buttonStyle(HSPrimaryButtonStyle())
                 .keyboardShortcut(.defaultAction)
-            } else if runner.running {
-                Button("Stop", role: .cancel) { runner.cancel() }
-                    .buttonStyle(HSSecondaryButtonStyle())
-                    .keyboardShortcut(.cancelAction)
-            } else if step == .finish {
-                Button("Make Headshots") { onContinue() }
-                    .buttonStyle(HSPrimaryButtonStyle())
-                    .keyboardShortcut(.defaultAction)
-                    .disabled(folder == nil || photoCount == 0)
-                    .help(folder == nil ? "Choose a folder first" : photoCount == 0 ? "No photos in this folder" : "Start polishing")
-            } else if step == .check && photoCount > 0 {
-                Button("Continue") { onContinue() }
-                    .buttonStyle(HSPrimaryButtonStyle())
-                    .keyboardShortcut(.defaultAction)
+                .buttonStyle(.borderedProminent)
+                .controlSize(.large)
+                .disabled(folder == nil)
+                .accessibilityLabel(phase == .gallery ? "Polish again" : "Polish photos")
+                .accessibilityHint(folder == nil
+                    ? "Choose a folder first"
+                    : "Runs headshots on the selected folder")
+                .help(folder == nil ? "Drop or choose a folder first" : "Run polish (↩)")
             }
         }
-        .padding(.horizontal, HSTheme.Space.xl)
-        .padding(.vertical, HSTheme.Space.md)
-        .background(HSTheme.surface)
-        .overlay(alignment: .top) {
-            Rectangle().fill(HSTheme.border).frame(height: 1)
-        }
-    }
-}
-
-// MARK: - Button styles (fixed min width so labels do not jump — interior)
-
-struct HSPrimaryButtonStyle: ButtonStyle {
-    @Environment(\.isEnabled) private var isEnabled
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
-
-    func makeBody(configuration: Configuration) -> some View {
-        configuration.label
-            .font(HSTypography.headline)
-            .foregroundStyle(HSTheme.accentOn)
-            .padding(.horizontal, HSTheme.Space.lg)
-            .padding(.vertical, 10)
-            .frame(minWidth: 132, minHeight: 36)
-            .background(
-                RoundedRectangle(cornerRadius: HSTheme.Radius.md, style: .continuous)
-                    .fill(isEnabled ? HSTheme.accent : HSTheme.borderStrong)
-            )
-            .scaleEffect(configuration.isPressed && !reduceMotion ? 0.98 : 1)
-            .animation(.hsControl(reduceMotion: reduceMotion), value: configuration.isPressed)
-    }
-}
-
-struct HSSecondaryButtonStyle: ButtonStyle {
-    @Environment(\.isEnabled) private var isEnabled
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
-
-    func makeBody(configuration: Configuration) -> some View {
-        configuration.label
-            .font(HSTypography.headline)
-            .foregroundStyle(isEnabled ? HSTheme.ink : HSTheme.inkSecondary)
-            .padding(.horizontal, HSTheme.Space.lg)
-            .padding(.vertical, 10)
-            .frame(minWidth: 96, minHeight: 36)
-            .background(
-                RoundedRectangle(cornerRadius: HSTheme.Radius.md, style: .continuous)
-                    .fill(configuration.isPressed ? HSTheme.surfaceMuted : HSTheme.surface)
-                    .overlay(
-                        RoundedRectangle(cornerRadius: HSTheme.Radius.md, style: .continuous)
-                            .strokeBorder(HSTheme.borderStrong, lineWidth: 1)
-                    )
-            )
-            .scaleEffect(configuration.isPressed && !reduceMotion ? 0.98 : 1)
-            .animation(.hsControl(reduceMotion: reduceMotion), value: configuration.isPressed)
     }
 }

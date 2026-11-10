@@ -4,6 +4,7 @@
     headshots group  ~/Photos/shoot/polished     group the polished photos by who is in them
     headshots run    ~/Photos/shoot              both, in order
     headshots models                             fetch the face models now, then you can go offline
+    headshots upgrade                            print the premium checkout link and save a receipt
 
 Add --json to any of them to get one JSON object per line instead of prose. That is what the
 macOS app reads; the two carry the same information.
@@ -14,7 +15,12 @@ import argparse
 import sys
 from pathlib import Path
 
-from . import __version__, events
+from . import __version__, decide, entitlements, events
+
+
+def _decide_flag(p: argparse.ArgumentParser) -> None:
+    p.add_argument("--decide", choices=tuple(decide.BACKENDS), default="local",
+                   help="who should look: local (default) or jev (premium)")
 
 
 def _framing_flags(p: argparse.ArgumentParser) -> None:
@@ -42,6 +48,7 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("folder", type=Path, help="folder of photos (only top-level files are read)")
     p.add_argument("--watch", action="store_true", help="keep running; polish photos as they're added")
     _framing_flags(p)
+    _decide_flag(p)
 
     g = sub.add_parser("group", help="group polished photos by who is in them")
     g.add_argument("folder", type=Path, help="a folder of polished photos")
@@ -56,8 +63,12 @@ def build_parser() -> argparse.ArgumentParser:
     r.add_argument("--threshold", type=float, help="see `headshots group --help`")
     r.add_argument("--expect", type=int, help="how many people you expect, as a cross-check")
     _framing_flags(r)
+    _decide_flag(r)
 
     sub.add_parser("models", help="download the face models now (they are cached after that)")
+    u = sub.add_parser("upgrade", help="print the premium checkout link and save a receipt")
+    u.add_argument("--receipt", type=Path,
+                   help="where to write the receipt (default: ~/.config/headshots/receipt.json)")
     return ap
 
 
@@ -73,11 +84,12 @@ def _polish(a) -> tuple[Path, int]:
     st = polish.settings_for(out_dir, a)
     if not polish.pick_sources(folder)[0] and not getattr(a, "watch", False):
         sys.exit(f"No photos found in {folder}")
+    decider = decide.choose(a.decide)
     model = polish.ensure_model()
     out_dir.mkdir(parents=True, exist_ok=True)
-    entries = polish.run(folder, out_dir, st, model, force=a.force)
+    entries = polish.run(folder, out_dir, st, model, force=a.force, decider=decider)
     if getattr(a, "watch", False):
-        polish.watch(folder, out_dir, st, model)
+        polish.watch(folder, out_dir, st, model, decider=decider)
     return out_dir, sum(polish.final_grade(e) == "FAIL" for e in entries)
 
 
@@ -85,6 +97,10 @@ def main(argv: list[str] | None = None) -> int:
     a = build_parser().parse_args(argv)
     if a.json:
         events.use_json()
+
+    if a.cmd == "upgrade":
+        events.say(entitlements.upgrade(receipt_path=a.receipt))
+        return 0
 
     if a.cmd == "models":
         from . import models
