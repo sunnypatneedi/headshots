@@ -1,5 +1,6 @@
 // Three-step product flow: Select folder → Polish → Gallery of polished outputs.
 // Craft: Harbor/Familiar calm hierarchy, Ice compact chrome, IINA image-first lightbox.
+// Tokens + drop intake from the AAA polish pass (Theme.swift, DropIntake.swift).
 
 import AppKit
 import SwiftUI
@@ -22,6 +23,7 @@ struct ContentView: View {
     @State private var folder: URL?
     @State private var options = Options()
     @State private var targeted = false
+    @State private var dropMessage: String?
     @State private var galleryFilter: GalleryFilter = .all
     @State private var gallerySelection: Event.Photo.ID?
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -35,7 +37,7 @@ struct ContentView: View {
     var body: some View {
         VStack(spacing: 0) {
             ScrollView {
-                VStack(alignment: .leading, spacing: 18) {
+                VStack(alignment: .leading, spacing: HSTheme.Space.lg) {
                     FlowStepper(phase: phase)
 
                     switch phase {
@@ -47,14 +49,22 @@ struct ContentView: View {
                         galleryStep
                     }
 
+                    if let dropMessage {
+                        DropMessageBanner(message: dropMessage) {
+                            self.dropMessage = nil
+                        }
+                        .transition(panelTransition)
+                    }
+
                     if let failure = runner.failure {
                         ErrorBanner(message: failure, onDismiss: { runner.failure = nil })
                             .transition(panelTransition)
                     }
                 }
-                .padding(20)
-                .animation(reduceMotion ? nil : .easeInOut(duration: 0.22), value: phase)
-                .animation(reduceMotion ? nil : .easeInOut(duration: 0.22), value: runner.failure)
+                .padding(HSTheme.Space.xl)
+                .animation(.hsPanel(reduceMotion: reduceMotion), value: phase)
+                .animation(.hsPanel(reduceMotion: reduceMotion), value: runner.failure)
+                .animation(.hsPanel(reduceMotion: reduceMotion), value: dropMessage)
             }
 
             Divider()
@@ -65,7 +75,7 @@ struct ContentView: View {
                 phase: phase,
                 onChooseDifferentFolder: chooseDifferentFolder
             )
-            .padding(.horizontal, 20)
+            .padding(.horizontal, HSTheme.Space.xl)
             .padding(.vertical, 14)
             .background(.bar)
         }
@@ -76,9 +86,14 @@ struct ContentView: View {
     // MARK: Steps
 
     private var selectStep: some View {
-        VStack(alignment: .leading, spacing: 18) {
-            DropZone(folder: $folder, targeted: $targeted, disabled: false)
-                .accessibilityLabel(dropAccessibilityLabel)
+        VStack(alignment: .leading, spacing: HSTheme.Space.lg) {
+            DropZone(
+                folder: $folder,
+                targeted: $targeted,
+                disabled: runner.running,
+                onApply: applyDrop(urls:)
+            )
+            .accessibilityLabel(dropAccessibilityLabel)
             SettingsPanel(options: $options)
         }
     }
@@ -119,25 +134,72 @@ struct ContentView: View {
         if let folder {
             return "Selected folder \(folder.lastPathComponent). Click to choose another."
         }
-        return "Drop a folder of photos, or click to choose one"
+        return "Drop a folder or photos such as JPG, or click to choose"
     }
 
     private var panelTransition: AnyTransition {
         reduceMotion ? .opacity : .opacity.combined(with: .move(edge: .top))
     }
 
+    private func applyDrop(urls: [URL]) {
+        let result = DropIntake.resolve(urls: urls)
+        if let message = result.message, result.folder == nil {
+            dropMessage = message
+            return
+        }
+        dropMessage = nil
+        if let next = result.folder {
+            folder = next
+        }
+    }
+
     private func chooseDifferentFolder() {
         gallerySelection = nil
         galleryFilter = .all
+        dropMessage = nil
         runner.resetResults()
         folder = nil
         let panel = NSOpenPanel()
         panel.canChooseDirectories = true
-        panel.canChooseFiles = false
+        panel.canChooseFiles = true
+        panel.allowsMultipleSelection = true
+        panel.allowedContentTypes = [.folder, .jpeg, .png, .heic, .tiff, .image]
         panel.prompt = "Choose"
         if panel.runModal() == .OK {
-            folder = panel.url
+            applyDrop(urls: panel.urls)
         }
+    }
+}
+
+private struct DropMessageBanner: View {
+    let message: String
+    let onDismiss: () -> Void
+
+    var body: some View {
+        HStack(alignment: .top, spacing: HSTheme.Space.md) {
+            Image(systemName: "exclamationmark.circle.fill")
+                .foregroundStyle(HSTheme.warning)
+                .accessibilityHidden(true)
+            Text(message)
+                .font(HSTypography.callout)
+                .foregroundStyle(HSTheme.ink)
+                .textSelection(.enabled)
+                .fixedSize(horizontal: false, vertical: true)
+            Spacer(minLength: 0)
+            Button("Dismiss", action: onDismiss)
+                .buttonStyle(.bordered)
+        }
+        .padding(HSTheme.Space.md)
+        .background(
+            RoundedRectangle(cornerRadius: HSTheme.Radius.md, style: .continuous)
+                .fill(HSTheme.accentSoft)
+                .overlay(
+                    RoundedRectangle(cornerRadius: HSTheme.Radius.md, style: .continuous)
+                        .strokeBorder(HSTheme.warning, lineWidth: 1)
+                )
+        )
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("Drop notice: \(message)")
     }
 }
 
@@ -230,8 +292,8 @@ private struct DropZone: View {
     @Binding var folder: URL?
     @Binding var targeted: Bool
     let disabled: Bool
+    let onApply: ([URL]) -> Void
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    @Environment(\.colorScheme) private var colorScheme
 
     var body: some View {
         let active = targeted && !disabled
@@ -239,13 +301,13 @@ private struct DropZone: View {
 
         Button(action: choose) {
             ZStack {
-                RoundedRectangle(cornerRadius: 14, style: .continuous)
-                    .fill(.ultraThinMaterial)
-                RoundedRectangle(cornerRadius: 14, style: .continuous)
-                    .fill(fillTint(active: active, hasFolder: hasFolder))
-                RoundedRectangle(cornerRadius: 14, style: .continuous)
+                RoundedRectangle(cornerRadius: HSTheme.Radius.lg, style: .continuous)
+                    .fill(HSTheme.surfaceMuted)
+                RoundedRectangle(cornerRadius: HSTheme.Radius.lg, style: .continuous)
+                    .fill(active ? HSTheme.dropTarget : (hasFolder ? HSTheme.accentSoft : HSTheme.surfaceMuted))
+                RoundedRectangle(cornerRadius: HSTheme.Radius.lg, style: .continuous)
                     .strokeBorder(
-                        borderColor(active: active, hasFolder: hasFolder),
+                        active || hasFolder ? HSTheme.accent : HSTheme.borderStrong,
                         style: StrokeStyle(
                             lineWidth: active || hasFolder ? 1.5 : 1.25,
                             dash: hasFolder || active ? [] : [6, 5]
@@ -255,71 +317,68 @@ private struct DropZone: View {
                 VStack(spacing: 10) {
                     Image(systemName: hasFolder ? "folder.fill" : "person.crop.rectangle.stack")
                         .font(.system(size: 28, weight: .medium))
-                        .foregroundStyle(active ? Color.accentColor : Color.secondary)
+                        .foregroundStyle(active ? HSTheme.accent : HSTheme.inkSecondary)
                         .symbolRenderingMode(.hierarchical)
                         .accessibilityHidden(true)
 
                     if let folder {
                         Text(folder.lastPathComponent)
                             .font(.title3.weight(.semibold))
-                            .foregroundStyle(.primary)
+                            .foregroundStyle(HSTheme.ink)
                             .lineLimit(1)
                         Text(folder.deletingLastPathComponent().path)
                             .font(.caption)
-                            .foregroundStyle(.secondary)
+                            .foregroundStyle(HSTheme.inkSecondary)
                             .lineLimit(1)
                             .truncationMode(.middle)
                     } else {
-                        Text("Drop a folder of photos")
+                        Text("Drop photos or a folder here")
                             .font(.title3.weight(.semibold))
-                            .foregroundStyle(.primary)
+                            .foregroundStyle(HSTheme.ink)
                         Text("Select → Polish → Gallery. Originals stay untouched.")
                             .font(.callout)
-                            .foregroundStyle(.secondary)
+                            .foregroundStyle(HSTheme.inkSecondary)
                             .multilineTextAlignment(.center)
                             .frame(maxWidth: 420)
                     }
                 }
-                .padding(.horizontal, 24)
+                .padding(.horizontal, HSTheme.Space.xl)
                 .padding(.vertical, 22)
             }
             .frame(minHeight: hasFolder ? 110 : 148)
             .scaleEffect(reduceMotion ? 1 : (active ? 1.01 : 1))
-            .animation(reduceMotion ? nil : .easeOut(duration: 0.15), value: active)
+            .animation(.hsControl(reduceMotion: reduceMotion), value: active)
         }
         .buttonStyle(.plain)
         .disabled(disabled)
-        .onDrop(of: [.fileURL], isTargeted: $targeted) { providers in
-            guard !disabled, let provider = providers.first else { return false }
-            _ = provider.loadObject(ofClass: URL.self) { url, _ in
-                guard let url, url.hasDirectoryPath else { return }
-                Task { @MainActor in folder = url }
+        .onDrop(of: DropIntake.acceptedTypes, isTargeted: Binding(
+            get: { targeted },
+            set: { targeted = disabled ? false : $0 }
+        )) { providers in
+            guard !disabled, !providers.isEmpty else { return false }
+            Task { @MainActor in
+                let urls = await DropReaders.loadURLs(from: providers)
+                onApply(urls)
             }
             return true
         }
-        .help(hasFolder ? "Click to choose a different folder" : "Click to choose a folder, or drag one in")
+        .help(hasFolder
+              ? "Click to choose a different folder or photos"
+              : "Drop a folder or photos (JPG, JPEG, PNG, HEIC), or click to choose")
         .accessibilityAddTraits(.isButton)
-    }
-
-    private func fillTint(active: Bool, hasFolder: Bool) -> Color {
-        if active { return Color.accentColor.opacity(colorScheme == .dark ? 0.18 : 0.10) }
-        if hasFolder { return Color.primary.opacity(colorScheme == .dark ? 0.06 : 0.03) }
-        return Color.primary.opacity(colorScheme == .dark ? 0.04 : 0.02)
-    }
-
-    private func borderColor(active: Bool, hasFolder: Bool) -> Color {
-        if active { return Color.accentColor.opacity(0.85) }
-        if hasFolder { return Color.secondary.opacity(0.45) }
-        return Color.secondary.opacity(0.35)
     }
 
     private func choose() {
         guard !disabled else { return }
         let panel = NSOpenPanel()
         panel.canChooseDirectories = true
-        panel.canChooseFiles = false
+        panel.canChooseFiles = true
+        panel.allowsMultipleSelection = true
+        panel.allowedContentTypes = [.folder, .jpeg, .png, .heic, .tiff, .image]
         panel.prompt = "Choose"
-        if panel.runModal() == .OK { folder = panel.url }
+        if panel.runModal() == .OK {
+            onApply(panel.urls)
+        }
     }
 }
 
@@ -334,16 +393,8 @@ private struct SettingsPanel: View {
         return Int((Double(options.width) * parts[1] / parts[0]).rounded())
     }
 
-    private var zoomLabel: String {
-        switch options.zoom {
-        case ..<0.93: return "Wider — head and shoulders"
-        case 0.93...1.07: return "Standard crop"
-        default: return "Tighter — head fills more"
-        }
-    }
-
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
+        VStack(alignment: .leading, spacing: HSTheme.Space.md) {
             sectionHeader("Frame", systemImage: "aspectratio")
             GroupBox {
                 VStack(alignment: .leading, spacing: 14) {
@@ -363,23 +414,21 @@ private struct SettingsPanel: View {
                                 .accessibilityLabel("Output width in pixels")
                             Text("px · \(options.width) × \(height)")
                                 .font(.callout)
-                                .foregroundStyle(.secondary)
+                                .foregroundStyle(HSTheme.inkSecondary)
                                 .accessibilityLabel("Output size \(options.width) by \(height) pixels")
                         }
                     }
 
-                    labeledRow("Crop") {
-                        HStack(spacing: 12) {
-                            Slider(value: $options.zoom, in: 0.7...1.3)
-                                .frame(maxWidth: 220)
-                                .accessibilityLabel("Crop zoom")
-                                .accessibilityValue(zoomLabel)
-                            Text(zoomLabel)
-                                .font(.callout)
-                                .foregroundStyle(.secondary)
-                                .frame(minWidth: 160, alignment: .leading)
-                                .lineLimit(1)
+                    labeledRow("Framing") {
+                        Picker("Framing", selection: $options.framing) {
+                            ForEach(Options.Framing.allCases) { framing in
+                                Text("\(framing.title) — \(framing.detail)").tag(framing)
+                            }
                         }
+                        .labelsHidden()
+                        .frame(maxWidth: 320, alignment: .leading)
+                        .accessibilityLabel("Framing preset")
+                        .accessibilityValue(options.framing.title)
                     }
                 }
                 .padding(4)
@@ -389,6 +438,8 @@ private struct SettingsPanel: View {
             GroupBox {
                 VStack(alignment: .leading, spacing: 10) {
                     Toggle("Black and white", isOn: $options.blackAndWhite)
+                    Toggle("Soft studio finish", isOn: $options.softStudio)
+                        .help("Tone and colour work. Off keeps the original look after crop.")
                     Toggle("Group by person afterwards", isOn: $options.groupByPerson)
                     if options.groupByPerson {
                         Label(
@@ -396,7 +447,7 @@ private struct SettingsPanel: View {
                             systemImage: "arrow.down.circle"
                         )
                         .font(.caption)
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(HSTheme.inkSecondary)
                         .fixedSize(horizontal: false, vertical: true)
                         .accessibilityLabel(
                             "Group by person downloads a 37 megabyte matching model the first time, then works offline."

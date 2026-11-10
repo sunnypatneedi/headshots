@@ -1,0 +1,61 @@
+<!doctype html>
+<html lang="en" data-theme="light" data-screen="welcome">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Headshots — UI preview</title>
+<link rel="stylesheet" href="preview.css">
+</head>
+<body>
+  <div class="stage">
+    <aside class="chrome" aria-label="Preview controls">
+      <strong>Preview</strong>
+      <label>Screen
+        <select id="screen">
+          <option value="welcome">Welcome</option>
+          <option value="check">Check Photos</option>
+          <option value="finish">Finish / Options</option>
+          <option value="processing">Processing</option>
+          <option value="results">Results</option>
+          <option value="empty">Empty (no photos)</option>
+          <option value="error">Error</option>
+        </select>
+      </label>
+      <label>Theme
+        <select id="theme">
+          <option value="light">Light</option>
+          <option value="dark">Dark</option>
+        </select>
+      </label>
+    </aside>
+
+    <div class="window" role="application" aria-label="Headshots">
+      <nav class="sidebar" aria-label="Workflow">
+        <div class="brand">
+          <div class="brand-mark" aria-hidden="true"></div>
+          <div>
+            <div class="brand-name">Headshots</div>
+            <div class="brand-tag">Polished portraits</div>
+          </div>
+        </div>
+        <ol class="steps" id="steps">
+          <li data-step="1"><span class="badge">1</span> Add Photos</li>
+          <li data-step="2"><span class="badge">2</span> Check Photos</li>
+          <li data-step="3"><span class="badge">3</span> Finish</li>
+          <li data-step="4"><span class="badge">4</span> Save</li>
+        </ol>
+        <div class="privacy">
+          <div class="privacy-title">Private by design</div>
+          <div class="privacy-copy">Photos never leave your Mac.</div>
+        </div>
+      </nav>
+
+      <main class="main">
+        <div class="pane" id="pane"></div>
+        <footer class="action-bar" id="action-bar"></footer>
+      </main>
+    </div>
+  </div>
+  <script src="preview.js"></script>
+</body>
+</html>
